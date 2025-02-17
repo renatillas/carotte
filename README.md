@@ -1,5 +1,7 @@
 # 🥕 Carotte
 
+## A RabbitMQ client for Gleam
+
 [![Package Version](https://img.shields.io/hexpm/v/candy)](https://hex.pm/packages/candy)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/candy/)
 
