@@ -1,8 +1,8 @@
-import carrot
-import carrot/channel
-import carrot/exchange
-import carrot/publisher
-import carrot/queue
+import carotte
+import carotte/channel
+import carotte/exchange
+import carotte/publisher
+import carotte/queue
 import gleam/erlang/process
 import gleam/io
 import gleeunit
@@ -14,8 +14,8 @@ pub fn main() {
 
 pub fn declare_exchange_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -33,8 +33,8 @@ pub fn declare_exchange_test() {
 
 pub fn delete_exchange_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -54,8 +54,8 @@ pub fn delete_exchange_test() {
 
 pub fn bind_exchanges_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -90,8 +90,8 @@ pub fn bind_exchanges_test() {
 
 pub fn unbind_exchanges_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -127,8 +127,8 @@ pub fn unbind_exchanges_test() {
 
 pub fn declare_queue_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -143,8 +143,8 @@ pub fn declare_queue_test() {
 
 pub fn declare_queue_async_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -159,8 +159,8 @@ pub fn declare_queue_async_test() {
 
 pub fn delete_queue_async_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -178,8 +178,8 @@ pub fn delete_queue_async_test() {
 
 pub fn bind_queue_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -205,8 +205,8 @@ pub fn bind_queue_test() {
 
 pub fn unbind_queue_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -240,8 +240,8 @@ pub fn unbind_queue_test() {
 
 pub fn purge_queue_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -259,8 +259,8 @@ pub fn purge_queue_test() {
 
 pub fn purge_queue_async_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -278,8 +278,8 @@ pub fn purge_queue_async_test() {
 
 pub fn queue_status_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -297,8 +297,8 @@ pub fn queue_status_test() {
 
 pub fn publish_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -325,8 +325,8 @@ pub fn publish_test() {
 
 pub fn publish_with_options_tes() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -364,8 +364,8 @@ pub fn publish_with_options_tes() {
 
 pub fn subscribe_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -410,8 +410,8 @@ pub fn subscribe_test() {
 
 pub fn unsubscribe_test() {
   let client =
-    carrot.default_client()
-    |> carrot.start()
+    carotte.default_client()
+    |> carotte.start()
     |> should.be_ok()
 
   let channel =
@@ -458,7 +458,6 @@ pub fn unsubscribe_test() {
       channel: channel,
       queue: "unsubscribe_queue",
       callback: fn(payload, _) {
-        io.debug(payload)
         payload.payload
         |> should.equal("payload")
       },

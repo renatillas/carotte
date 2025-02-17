@@ -1,5 +1,5 @@
-import carrot
-import carrot/channel
+import carotte
+import carotte/channel
 
 pub type PublishOption {
   /// If set, returns an error if the broker can't route the message to a queue
@@ -41,15 +41,15 @@ pub fn publish(
   routing_key routing_key: String,
   payload payload: String,
   options options: List(PublishOption),
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_publish(channel, exchange, routing_key, payload, options)
 }
 
-@external(erlang, "carrot_ffi", "publish")
+@external(erlang, "carotte_ffi", "publish")
 fn do_publish(
   channel: channel.Channel,
   exchange: String,
   routing_key: String,
   payload: String,
   publish_options: List(PublishOption),
-) -> Result(Nil, carrot.CarrotError)
+) -> Result(Nil, carotte.CarotteError)

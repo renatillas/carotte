@@ -1,6 +1,6 @@
-import carrot
-import carrot/channel
-import carrot/publisher
+import carotte
+import carotte/channel
+import carotte/publisher
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
@@ -65,7 +65,7 @@ pub fn with_auto_delete(queue: Queue) -> Queue {
 pub fn declare(
   queue: Queue,
   channel: channel.Channel,
-) -> Result(DeclaredQueue, carrot.CarrotError) {
+) -> Result(DeclaredQueue, carotte.CarotteError) {
   do_declare(
     channel,
     queue.name,
@@ -77,7 +77,7 @@ pub fn declare(
   )
 }
 
-@external(erlang, "carrot_ffi", "queue_declare")
+@external(erlang, "carotte_ffi", "queue_declare")
 fn do_declare(
   channel: channel.Channel,
   queue: String,
@@ -86,13 +86,13 @@ fn do_declare(
   exclusive: Bool,
   auto_delete: Bool,
   nowait: Bool,
-) -> Result(DeclaredQueue, carrot.CarrotError)
+) -> Result(DeclaredQueue, carotte.CarotteError)
 
 /// Declare a queue on the broker asynchronously
 pub fn declare_async(
   queue: Queue,
   channel: channel.Channel,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_declare_async(
     channel,
     queue.name,
@@ -104,7 +104,7 @@ pub fn declare_async(
   )
 }
 
-@external(erlang, "carrot_ffi", "queue_declare")
+@external(erlang, "carotte_ffi", "queue_declare")
 fn do_declare_async(
   channel: channel.Channel,
   queue: String,
@@ -113,7 +113,7 @@ fn do_declare_async(
   exclusive: Bool,
   auto_delete: Bool,
   nowait: Bool,
-) -> Result(Nil, carrot.CarrotError)
+) -> Result(Nil, carotte.CarotteError)
 
 /// Delete a queue from the broker
 /// If `if_unused` is set, the queue will only be deleted if it has no subscribers
@@ -123,7 +123,7 @@ pub fn delete(
   queue queue: String,
   if_unused if_unused: Bool,
   if_empty if_empty: Bool,
-) -> Result(Int, carrot.CarrotError) {
+) -> Result(Int, carotte.CarotteError) {
   do_delete(channel, queue, if_unused, if_empty, False)
 }
 
@@ -133,19 +133,19 @@ pub fn delete_async(
   queue queue: String,
   if_unused if_unused: Bool,
   if_empty if_empty: Bool,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   use _ <- result.map(do_delete(channel, queue, if_unused, if_empty, True))
   Nil
 }
 
-@external(erlang, "carrot_ffi", "queue_delete")
+@external(erlang, "carotte_ffi", "queue_delete")
 fn do_delete(
   channel: channel.Channel,
   queue: String,
   if_unused: Bool,
   if_empty: Bool,
   nowait: Bool,
-) -> Result(Int, carrot.CarrotError)
+) -> Result(Int, carotte.CarotteError)
 
 /// Bind a queue to an exchange
 /// The `routing_key` is used to filter messages from the exchange
@@ -154,7 +154,7 @@ pub fn bind(
   queue queue: String,
   exchange exchange: String,
   routing_key routing_key: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_bind(channel, queue, exchange, routing_key, False)
 }
 
@@ -164,18 +164,18 @@ pub fn bind_async(
   queue queue: String,
   exchange exchange: String,
   routing_key routing_key: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_bind(channel, queue, exchange, routing_key, True)
 }
 
-@external(erlang, "carrot_ffi", "queue_bind")
+@external(erlang, "carotte_ffi", "queue_bind")
 fn do_bind(
   channel: channel.Channel,
   queue: String,
   exchange: String,
   routing_key: String,
   nowait: Bool,
-) -> Result(Nil, carrot.CarrotError)
+) -> Result(Nil, carotte.CarotteError)
 
 /// Unbind a queue from an exchange
 /// The `routing_key` is used to filter messages from the exchange
@@ -184,23 +184,23 @@ pub fn unbind(
   queue queue: String,
   exchange exchange: String,
   routing_key routing_key: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_unbind(channel, queue, exchange, routing_key)
 }
 
-@external(erlang, "carrot_ffi", "queue_unbind")
+@external(erlang, "carotte_ffi", "queue_unbind")
 fn do_unbind(
   channel: channel.Channel,
   queue: String,
   exchange: String,
   routing_key: String,
-) -> Result(Nil, carrot.CarrotError)
+) -> Result(Nil, carotte.CarotteError)
 
 /// Purge a queue of all messages
 pub fn purge(
   channel channel: channel.Channel,
   queue queue: String,
-) -> Result(Int, carrot.CarrotError) {
+) -> Result(Int, carotte.CarotteError) {
   do_purge(channel, queue, False)
 }
 
@@ -208,23 +208,23 @@ pub fn purge(
 pub fn purge_async(
   channel channel: channel.Channel,
   queue queue: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   use _ <- result.map(do_purge(channel, queue, True))
   Nil
 }
 
-@external(erlang, "carrot_ffi", "queue_purge")
+@external(erlang, "carotte_ffi", "queue_purge")
 fn do_purge(
   channel: channel.Channel,
   queue: String,
   nowait: Bool,
-) -> Result(Int, carrot.CarrotError)
+) -> Result(Int, carotte.CarotteError)
 
 /// Get the status of a queue
 pub fn status(
   channel channel: channel.Channel,
   queue queue: String,
-) -> Result(DeclaredQueue, carrot.CarrotError) {
+) -> Result(DeclaredQueue, carotte.CarotteError) {
   do_declare(channel, queue, True, False, False, False, False)
 }
 
@@ -234,7 +234,7 @@ pub fn subscribe(
   channel channel: channel.Channel,
   queue queue: String,
   callback fun: fn(Payload, Deliver) -> Nil,
-) -> Result(String, carrot.CarrotError) {
+) -> Result(String, carotte.CarotteError) {
   let consumer_pid =
     process.start(fn() { do_start_consumer(channel, fun) }, False)
   consume(channel, queue, consumer_pid)
@@ -244,16 +244,16 @@ fn consume(
   channel channel: channel.Channel,
   queue queue: String,
   pid pid: process.Pid,
-) -> Result(String, carrot.CarrotError) {
+) -> Result(String, carotte.CarotteError) {
   do_consume_ffi(channel, queue, pid)
 }
 
-@external(erlang, "carrot_ffi", "consume")
+@external(erlang, "carotte_ffi", "consume")
 fn do_consume_ffi(
   channel: channel.Channel,
   queue: String,
   pid: process.Pid,
-) -> Result(String, carrot.CarrotError)
+) -> Result(String, carotte.CarotteError)
 
 fn do_start_consumer(channel, fun) {
   let _consumer_tag =
@@ -368,7 +368,7 @@ fn do_consume(channel, fun) {
   do_consume(channel, fun)
 }
 
-@external(erlang, "carrot_ffi", "ack")
+@external(erlang, "carotte_ffi", "ack")
 fn do_basic_ack(
   channel: channel.Channel,
   delivery_tag: Int,
@@ -379,7 +379,7 @@ fn do_basic_ack(
 pub fn unsubscribe(
   channel channel: channel.Channel,
   consumer_tag consumer_tag: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_unsubscribe(channel, consumer_tag, False)
 }
 
@@ -387,16 +387,16 @@ pub fn unsubscribe(
 pub fn unsubscribe_async(
   channel channel: channel.Channel,
   consumer_tag consumer_tag: String,
-) -> Result(Nil, carrot.CarrotError) {
+) -> Result(Nil, carotte.CarotteError) {
   do_unsubscribe(channel, consumer_tag, True)
 }
 
-@external(erlang, "carrot_ffi", "unsubscribe")
+@external(erlang, "carotte_ffi", "unsubscribe")
 fn do_unsubscribe(
   channel: channel.Channel,
   consumer_tag: String,
   nowait: Bool,
-) -> Result(Nil, carrot.CarrotError)
+) -> Result(Nil, carotte.CarotteError)
 
 pub fn add_if_some(list, constructor, value) {
   case value {

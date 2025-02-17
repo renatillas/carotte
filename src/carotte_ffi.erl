@@ -1,9 +1,9 @@
--module(carrot_ffi).
+-module(carotte_ffi).
 
 -export([start/9, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3 ,exchange_declare/2, exchange_delete/4, exchange_bind/5,
          exchange_unbind/5, queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3 ]).
 
--record(candy_client, {pid}).
+-record(carotte_client, {pid}).
 -record(channel, {pid}).
 -record(amqp_params_network,
         {username = <<"guest">>,
@@ -42,13 +42,13 @@ start(Username,
                                                   })
   of
     {ok, Pid} ->
-      {ok, #candy_client{pid = Pid}};
+      {ok, #carotte_client{pid = Pid}};
     {error, Error} ->
       {error, Error}
   end.
 
-open_channel(CandyClient) ->
-  case amqp_connection:open_channel(CandyClient#candy_client.pid) of
+open_channel(CarotteClient) ->
+  case amqp_connection:open_channel(CarotteClient#carotte_client.pid) of
     {ok, Pid} ->
       {ok, #channel{pid = Pid}};
     {error, Error} ->
@@ -300,5 +300,5 @@ unsubscribe(Channel, ConsumerTag, Nowait) ->
       {error, Error}
   end.
 
-close(CandyClient) ->
-  amqp_connection:close(CandyClient#candy_client.pid).
+close(CarotteClient) ->
+  amqp_connection:close(CarotteClient#carotte_client.pid).

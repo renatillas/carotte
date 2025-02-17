@@ -1,4 +1,4 @@
-import carrot
+import carotte
 import gleam/erlang/process.{type Pid}
 
 pub type Channel {
@@ -6,11 +6,11 @@ pub type Channel {
 }
 
 /// Open a channel to a RabbitMQ server
-pub fn open_channel(candy_client: carrot.CarrotClient) {
+pub fn open_channel(candy_client: carotte.CarotteClient) {
   do_open_channel(candy_client)
 }
 
 @external(erlang, "carrot_ffi", "open_channel")
 fn do_open_channel(
-  candy_client: carrot.CarrotClient,
-) -> Result(Channel, carrot.CarrotError)
+  candy_client: carotte.CarotteClient,
+) -> Result(Channel, carotte.CarotteError)

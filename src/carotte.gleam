@@ -1,10 +1,10 @@
 import gleam/erlang/process.{type Pid}
 
-pub type CarrotClient {
-  CarrotClient(pid: Pid)
+pub type CarotteClient {
+  CarotteClient(pid: Pid)
 }
 
-pub type CarrotError {
+pub type CarotteError {
   Blocked
   Closed
 }
@@ -66,7 +66,7 @@ pub fn with_connection_timeout(
   Builder(..builder, connection_timeout:)
 }
 
-pub fn start(builder: Builder) -> Result(CarrotClient, CarrotError) {
+pub fn start(builder: Builder) -> Result(CarotteClient, CarotteError) {
   do_start(
     builder.username,
     builder.password,
@@ -91,11 +91,11 @@ fn do_start(
   frame_max: Int,
   heartbeat: Int,
   connection_timeout: Int,
-) -> Result(CarrotClient, CarrotError)
+) -> Result(CarotteClient, CarotteError)
 
-pub fn close(client: CarrotClient) -> Result(Nil, CarrotError) {
+pub fn close(client: CarotteClient) -> Result(Nil, CarotteError) {
   do_close(client)
 }
 
 @external(erlang, "carrot_ffi", "close")
-fn do_close(client: CarrotClient) -> Result(Nil, CarrotError)
+fn do_close(client: CarotteClient) -> Result(Nil, CarotteError)
