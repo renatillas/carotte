@@ -10,7 +10,11 @@ gleam add carotte
 ```
 
 ```gleam
-import candy
+import carotte
+import carotte/channel
+import carotte/exchange
+import carotte/queue
+import carotte/publisher
 
 pub fn main() {
   let assert Ok(client) =

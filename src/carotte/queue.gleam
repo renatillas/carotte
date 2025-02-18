@@ -398,7 +398,7 @@ fn do_unsubscribe(
   nowait: Bool,
 ) -> Result(Nil, carotte.CarotteError)
 
-pub fn add_if_some(list, constructor, value) {
+fn add_if_some(list, constructor, value) {
   case value {
     Some(v) -> [constructor(v), ..list]
     None -> list
