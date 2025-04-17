@@ -12,5 +12,5 @@ pub fn open_channel(carotte_client: carotte.CarotteClient) {
 
 @external(erlang, "carotte_ffi", "open_channel")
 fn do_open_channel(
-  candy_client: carotte.CarotteClient,
+  carotte_client: carotte.CarotteClient,
 ) -> Result(Channel, carotte.CarotteError)
