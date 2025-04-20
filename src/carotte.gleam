@@ -80,7 +80,7 @@ pub fn start(builder: Builder) -> Result(CarotteClient, CarotteError) {
   )
 }
 
-@external(erlang, "carrot_ffi", "start")
+@external(erlang, "carotte_ffi", "start")
 fn do_start(
   username: String,
   password: String,
@@ -97,5 +97,5 @@ pub fn close(client: CarotteClient) -> Result(Nil, CarotteError) {
   do_close(client)
 }
 
-@external(erlang, "carrot_ffi", "close")
+@external(erlang, "carotte_ffi", "close")
 fn do_close(client: CarotteClient) -> Result(Nil, CarotteError)
