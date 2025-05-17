@@ -55,7 +55,7 @@ pub fn main() {
 }
 ```
 
-Further documentation can be found at <https://hexdocs.pm/candy>.
+Further documentation can be found at <https://hexdocs.pm/carotte>.
 
 ## Development
 
