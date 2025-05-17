@@ -4,7 +4,6 @@ import carotte/exchange
 import carotte/publisher
 import carotte/queue
 import gleam/erlang/process
-import gleam/io
 import gleeunit
 import gleeunit/should
 
@@ -323,7 +322,7 @@ pub fn publish_test() {
   |> should.be_ok()
 }
 
-pub fn publish_with_options_tes() {
+pub fn publish_with_options_test() {
   let client =
     carotte.default_client()
     |> carotte.start()
@@ -341,6 +340,19 @@ pub fn publish_with_options_tes() {
   |> queue.declare(channel)
   |> should.be_ok()
 
+  let headers =
+    publisher.headers_from_list([
+      #("string_key", publisher.StringHeader("value")),
+      #("bool_key", publisher.BoolHeader(True)),
+      #(
+        "list_key",
+        publisher.ListHeader([
+          publisher.StringHeader("value1"),
+          publisher.StringHeader("value2"),
+        ]),
+      ),
+    ])
+
   publisher.publish(
     channel: channel,
     exchange: "pwo_exchange",
@@ -350,6 +362,7 @@ pub fn publish_with_options_tes() {
       publisher.Mandatory(True),
       publisher.ContentType("text/plain"),
       publisher.ContentEncoding("utf-8"),
+      publisher.Headers(headers),
       publisher.Persistent(True),
       publisher.CorrelationId("123"),
       publisher.Priority(9),
