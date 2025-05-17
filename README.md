@@ -2,8 +2,8 @@
 
 ## A RabbitMQ client for Gleam
 
-[![Package Version](https://img.shields.io/hexpm/v/candy)](https://hex.pm/packages/candy)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/candy/)
+[![Package Version](https://img.shields.io/hexpm/v/carotte)](https://hex.pm/packages/carotte)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/carotte/)
 
 ```sh
 gleam add carotte
