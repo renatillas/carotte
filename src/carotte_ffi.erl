@@ -238,10 +238,14 @@ queue_purge(Channel, Queue, Nowait) ->
 -record('P_basic', {content_type, content_encoding, headers, delivery_mode, priority, correlation_id, reply_to, expiration, message_id, timestamp, type, user_id, app_id, cluster_id}).
 -record(amqp_msg, {props = #'P_basic'{}, payload = <<>>}).
 publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
+  Headers = case proplists:get_value(headers, Proplist, undefined) of
+    {header_list, HeaderList} -> HeaderList;
+    _ -> undefined
+  end,
   Props = #'P_basic'{
              content_type = proplists:get_value(content_type, Proplist, undefined), 
                      content_encoding = proplists:get_value(content_encoding, Proplist, undefined), 
-                     headers = proplists:get_value(headers, Proplist, undefined), 
+                     headers = Headers, 
                      delivery_mode = case proplists:get_value(persistent, Proplist, false) of true -> 2; false -> 1 end, 
                      priority = proplists:get_value(priority, Proplist, undefined), 
                      correlation_id = proplists:get_value(correlation_id, Proplist, undefined), 
