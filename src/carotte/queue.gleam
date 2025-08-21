@@ -235,8 +235,7 @@ pub fn subscribe(
   queue queue: String,
   callback fun: fn(Payload, Deliver) -> Nil,
 ) -> Result(String, carotte.CarotteError) {
-  let consumer_pid =
-    process.start(fn() { do_start_consumer(channel, fun) }, False)
+  let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
   consume(channel, queue, consumer_pid)
 }
 
@@ -258,14 +257,11 @@ fn do_consume_ffi(
 fn do_start_consumer(channel, fun) {
   let _consumer_tag =
     process.new_selector()
-    |> process.selecting_record2(
-      atom.create_from_string("basic.consume_ok"),
-      fn(dyn) {
-        let assert Ok(consumer_tag) = decode.run(dyn, decode.string)
-        consumer_tag
-      },
-    )
-    |> process.select_forever()
+    |> process.select_record(atom.create("basic.consume_ok"), 2, fn(dyn) {
+      let assert Ok(consumer_tag) = decode.run(dyn, decode.string)
+      consumer_tag
+    })
+    |> process.selector_receive_forever()
 
   do_consume(channel, fun)
 }
@@ -273,21 +269,19 @@ fn do_start_consumer(channel, fun) {
 fn do_consume(channel, fun) {
   let #(basic_deliver, payload) =
     process.new_selector()
-    |> process.selecting_record2(
-      atom.create_from_string("basic.cancel"),
+    |> process.select_record(atom.create("basic.cancel"), 2, fn(_consumer_tag) {
+      process.send_exit(process.self())
+      panic
+    })
+    |> process.select_record(
+      atom.create("basic.cancel_ok"),
+      2,
       fn(_consumer_tag) {
         process.send_exit(process.self())
         panic
       },
     )
-    |> process.selecting_record2(
-      atom.create_from_string("basic.cancel_ok"),
-      fn(_consumer_tag) {
-        process.send_exit(process.self())
-        panic
-      },
-    )
-    |> process.selecting_anything(fn(a) {
+    |> process.select_other(fn(a) {
       let basic_deliver_decoder = {
         use consumer_tag <- decode.subfield([1], decode.string)
         use delivery_tag <- decode.subfield([2], decode.int)
@@ -362,7 +356,7 @@ fn do_consume(channel, fun) {
       let assert Ok(decoded) = decode.run(a, decoder)
       decoded
     })
-    |> process.select_forever()
+    |> process.selector_receive_forever()
   fun(payload, basic_deliver)
   do_basic_ack(channel, basic_deliver.delivery_tag, False)
   do_consume(channel, fun)

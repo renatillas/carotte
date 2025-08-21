@@ -26,26 +26,10 @@ pub type HeaderValue {
   ListHeader(List(HeaderValue))
 }
 
+@external(erlang, "carotte_ffi", "header_value_to_header_tuple")
 fn header_value_to_header_tuple(
   value: HeaderValue,
-) -> #(atom.Atom, dynamic.Dynamic) {
-  case value {
-    BoolHeader(value) -> #(atom.create_from_string("bool"), dynamic.from(value))
-    FloatHeader(value) -> #(
-      atom.create_from_string("float"),
-      dynamic.from(value),
-    )
-    IntHeader(value) -> #(atom.create_from_string("long"), dynamic.from(value))
-    StringHeader(value) -> #(
-      atom.create_from_string("longstr"),
-      dynamic.from(value),
-    )
-    ListHeader(value) -> #(
-      atom.create_from_string("array"),
-      dynamic.from(value |> list.map(header_value_to_header_tuple)),
-    )
-  }
-}
+) -> #(atom.Atom, dynamic.Dynamic)
 
 pub fn headers_from_list(list: List(#(String, HeaderValue))) -> HeaderList {
   list
