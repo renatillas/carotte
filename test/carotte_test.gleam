@@ -386,3 +386,10 @@ pub fn unsubscribe_test() {
   let assert Ok(_) = queue.unsubscribe(channel, consumer_tag)
   process.sleep(1000)
 }
+
+pub fn auth_failure_test() {
+  let assert Error(carotte.AuthFailure(_)) =
+    carotte.default_client()
+    |> carotte.with_password("wrong")
+    |> carotte.start()
+}
