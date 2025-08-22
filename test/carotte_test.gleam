@@ -487,9 +487,7 @@ pub fn auth_failure_test() {
   |> carotte.with_password("wrong")
   |> carotte.start()
   |> should.be_error()
-  |> should.equal(
-    carotte.AuthFailure(<<
-      "ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.":utf8,
-    >>),
-  )
+  |> should.equal(carotte.AuthFailure(
+    "ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.",
+  ))
 }

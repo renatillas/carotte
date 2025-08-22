@@ -44,7 +44,11 @@ start(Username,
     {ok, Pid} ->
       {ok, #carotte_client{pid = Pid}};
     {error, Error} ->
-      {error, Error}
+      case Error of
+        {Err, Msg} ->
+          {error, {Err, erlang:list_to_binary(Msg)}};
+        _ -> {error, Error}
+        end
   end.
 
 open_channel(CarotteClient) ->

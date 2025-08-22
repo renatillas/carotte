@@ -7,7 +7,7 @@ pub type CarotteClient {
 pub type CarotteError {
   Blocked
   Closed
-  AuthFailure(BitArray)
+  AuthFailure(String)
 }
 
 pub opaque type Builder {
