@@ -151,7 +151,7 @@ convert_error({invalid_path, Path}) when is_list(Path) ->
   {error, {invalid_path, list_to_binary(Path)}};
 convert_error({invalid_path, Path}) when is_binary(Path) ->
   {error, {invalid_path, Path}};
-% Handle command invalid errors  
+% Handle command invalid errors
 convert_error(command_invalid) ->
   {error, {command_invalid, <<"Invalid command">>}};
 convert_error({command_invalid, Reason}) when is_list(Reason) ->
@@ -253,8 +253,8 @@ start(Name,
       convert_error(already_registered)
   end.
 
-open_channel(ClientName) ->
-  case amqp_connection:open_channel(ClientName) of
+open_channel(Client) ->
+  case amqp_connection:open_channel(Client#client.name) of
     {ok, ChannelPid} ->
       {ok, #channel{pid = ChannelPid}};
     {error, Error} ->

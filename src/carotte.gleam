@@ -3,7 +3,7 @@ import gleam/otp/actor
 import gleam/otp/supervision
 import gleam/result
 
-pub type Client {
+pub opaque type Client {
   Client(name: process.Name(Message))
 }
 
@@ -122,21 +122,26 @@ pub fn start(builder: Builder) -> actor.StartResult(Client) {
         Closed -> actor.InitFailed("Closed connection")
         AuthFailure(reason) -> actor.InitFailed("AuthFailure: " <> reason)
         ProcessNotFound -> actor.InitFailed("Process not found")
-        AlreadyRegistered(reason) -> actor.InitFailed("AlreadyRegistered: " <> reason)
+        AlreadyRegistered(reason) ->
+          actor.InitFailed("AlreadyRegistered: " <> reason)
         NotFound(reason) -> actor.InitFailed("NotFound: " <> reason)
         AccessRefused(reason) -> actor.InitFailed("AccessRefused: " <> reason)
-        PreconditionFailed(reason) -> actor.InitFailed("PreconditionFailed: " <> reason)
+        PreconditionFailed(reason) ->
+          actor.InitFailed("PreconditionFailed: " <> reason)
         ResourceLocked(reason) -> actor.InitFailed("ResourceLocked: " <> reason)
         ChannelClosed(reason) -> actor.InitFailed("ChannelClosed: " <> reason)
-        ConnectionRefused(reason) -> actor.InitFailed("ConnectionRefused: " <> reason)
-        ConnectionTimeout(reason) -> actor.InitFailed("ConnectionTimeout: " <> reason)
+        ConnectionRefused(reason) ->
+          actor.InitFailed("ConnectionRefused: " <> reason)
+        ConnectionTimeout(reason) ->
+          actor.InitFailed("ConnectionTimeout: " <> reason)
         FrameError(reason) -> actor.InitFailed("FrameError: " <> reason)
         InternalError(reason) -> actor.InitFailed("InternalError: " <> reason)
         InvalidPath(reason) -> actor.InitFailed("InvalidPath: " <> reason)
         NoRoute(reason) -> actor.InitFailed("NoRoute: " <> reason)
         NotAllowed(reason) -> actor.InitFailed("NotAllowed: " <> reason)
         NotImplemented(reason) -> actor.InitFailed("NotImplemented: " <> reason)
-        UnexpectedFrame(reason) -> actor.InitFailed("UnexpectedFrame: " <> reason)
+        UnexpectedFrame(reason) ->
+          actor.InitFailed("UnexpectedFrame: " <> reason)
         CommandInvalid(reason) -> actor.InitFailed("CommandInvalid: " <> reason)
         UnknownError(reason) -> actor.InitFailed("UnknownError: " <> reason)
       }
