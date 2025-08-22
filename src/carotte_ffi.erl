@@ -1,11 +1,11 @@
 -module(carotte_ffi).
 
--export([start/9, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3,
+-export([start/10, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
          header_value_to_header_tuple/1]).
 
--record(carotte_client, {pid}).
+-record(client, {pid, name}).
 -record(channel, {pid}).
 -record(amqp_params_network,
         {username = <<"guest">>,
@@ -30,7 +30,8 @@ start(Username,
       ChannelMax,
       FrameMax,
       Heartbeat,
-      ConnectionTimeout) ->
+      ConnectionTimeout,
+      Name) ->
   case amqp_connection:start(#amqp_params_network{username = Username,
                                                   password = Password,
                                                   virtual_host = VirtualHost,
@@ -42,17 +43,18 @@ start(Username,
                                                   connection_timeout = ConnectionTimeout})
   of
     {ok, Pid} ->
-      {ok, #carotte_client{pid = Pid}};
+      {ok, #client{pid = Pid, name = Name}};
     {error, Error} ->
       case Error of
         {Err, Msg} ->
           {error, {Err, erlang:list_to_binary(Msg)}};
-        _ -> {error, Error}
-        end
+        _ ->
+          {error, Error}
+      end
   end.
 
 open_channel(CarotteClient) ->
-  case amqp_connection:open_channel(CarotteClient#carotte_client.pid) of
+  case amqp_connection:open_channel(CarotteClient#client.pid) of
     {ok, Pid} ->
       {ok, #channel{pid = Pid}};
     {error, Error} ->
@@ -357,7 +359,7 @@ unsubscribe(Channel, ConsumerTag, Nowait) ->
   end.
 
 close(CarotteClient) ->
-  amqp_connection:close(CarotteClient#carotte_client.pid).
+  amqp_connection:close(CarotteClient#client.pid).
 
 header_value_to_header_tuple(Value) ->
   case Value of

@@ -1,7 +1,10 @@
 import gleam/erlang/process.{type Pid}
+import gleam/otp/actor
+import gleam/otp/supervision
+import gleam/result
 
-pub type CarotteClient {
-  CarotteClient(pid: Pid)
+pub opaque type Client {
+  Client(pid: Pid, name: process.Name(Message))
 }
 
 pub type CarotteError {
@@ -12,6 +15,7 @@ pub type CarotteError {
 
 pub opaque type Builder {
   Builder(
+    name: process.Name(Message),
     username: String,
     password: String,
     virtual_host: String,
@@ -24,8 +28,21 @@ pub opaque type Builder {
   )
 }
 
-pub fn default_client() -> Builder {
-  Builder("guest", "guest", "/", "localhost", 5672, 2074, 0, 10, 60_000)
+pub type Message
+
+pub fn default_client(name name: process.Name(Message)) -> Builder {
+  Builder(
+    "guest",
+    "guest",
+    "/",
+    "localhost",
+    5672,
+    2074,
+    0,
+    10,
+    60_000,
+    name: name,
+  )
 }
 
 pub fn with_username(builder: Builder, username: String) -> Builder {
@@ -67,18 +84,29 @@ pub fn with_connection_timeout(
   Builder(..builder, connection_timeout:)
 }
 
-pub fn start(builder: Builder) -> Result(CarotteClient, CarotteError) {
-  do_start(
-    builder.username,
-    builder.password,
-    builder.virtual_host,
-    builder.host,
-    builder.port,
-    builder.channel_max,
-    builder.frame_max,
-    builder.heartbeat,
-    builder.connection_timeout,
+pub fn start(builder: Builder) -> actor.StartResult(Client) {
+  use client <- result.try(
+    do_start(
+      builder.username,
+      builder.password,
+      builder.virtual_host,
+      builder.host,
+      builder.port,
+      builder.channel_max,
+      builder.frame_max,
+      builder.heartbeat,
+      builder.connection_timeout,
+      builder.name,
+    )
+    |> result.map_error(with: fn(carotte_error) {
+      case carotte_error {
+        Blocked -> actor.InitFailed("Blocked connection")
+        Closed -> actor.InitFailed("Closed connection")
+        AuthFailure(reason) -> actor.InitFailed("AuthFailure: " <> reason)
+      }
+    }),
   )
+  echo Ok(actor.Started(client.pid, client))
 }
 
 @external(erlang, "carotte_ffi", "start")
@@ -92,11 +120,21 @@ fn do_start(
   frame_max: Int,
   heartbeat: Int,
   connection_timeout: Int,
-) -> Result(CarotteClient, CarotteError)
+  name: process.Name(Message),
+) -> Result(Client, CarotteError)
 
-pub fn close(client: CarotteClient) -> Result(Nil, CarotteError) {
+pub fn close(client: Client) -> Result(Nil, CarotteError) {
   do_close(client)
 }
 
 @external(erlang, "carotte_ffi", "close")
-fn do_close(client: CarotteClient) -> Result(Nil, CarotteError)
+fn do_close(client: Client) -> Result(Nil, CarotteError)
+
+pub fn supervised(builder: Builder) -> supervision.ChildSpecification(Client) {
+  supervision.worker(fn() { start(builder) })
+}
+
+pub fn named_client(name: process.Name(Message)) -> Result(Client, Nil) {
+  use process_id <- result.map(process.named(name))
+  Client(process_id, name)
+}
