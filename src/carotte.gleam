@@ -1,16 +1,17 @@
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process
 import gleam/otp/actor
 import gleam/otp/supervision
 import gleam/result
 
-pub opaque type Client {
-  Client(pid: Pid, name: process.Name(Message))
+pub type Client {
+  Client(name: process.Name(Message))
 }
 
 pub type CarotteError {
   Blocked
   Closed
   AuthFailure(String)
+  ProcessNotFound
 }
 
 pub opaque type Builder {
@@ -85,8 +86,9 @@ pub fn with_connection_timeout(
 }
 
 pub fn start(builder: Builder) -> actor.StartResult(Client) {
-  use client <- result.try(
+  use pid <- result.try(
     do_start(
+      builder.name,
       builder.username,
       builder.password,
       builder.virtual_host,
@@ -96,21 +98,22 @@ pub fn start(builder: Builder) -> actor.StartResult(Client) {
       builder.frame_max,
       builder.heartbeat,
       builder.connection_timeout,
-      builder.name,
     )
     |> result.map_error(with: fn(carotte_error) {
       case carotte_error {
         Blocked -> actor.InitFailed("Blocked connection")
         Closed -> actor.InitFailed("Closed connection")
         AuthFailure(reason) -> actor.InitFailed("AuthFailure: " <> reason)
+        ProcessNotFound -> actor.InitFailed("Process not found")
       }
     }),
   )
-  echo Ok(actor.Started(client.pid, client))
+  Ok(actor.Started(pid, named_client(builder.name)))
 }
 
 @external(erlang, "carotte_ffi", "start")
 fn do_start(
+  name: process.Name(Message),
   username: String,
   password: String,
   virtual_host: String,
@@ -120,8 +123,7 @@ fn do_start(
   frame_max: Int,
   heartbeat: Int,
   connection_timeout: Int,
-  name: process.Name(Message),
-) -> Result(Client, CarotteError)
+) -> Result(process.Pid, CarotteError)
 
 pub fn close(client: Client) -> Result(Nil, CarotteError) {
   do_close(client)
@@ -134,7 +136,6 @@ pub fn supervised(builder: Builder) -> supervision.ChildSpecification(Client) {
   supervision.worker(fn() { start(builder) })
 }
 
-pub fn named_client(name: process.Name(Message)) -> Result(Client, Nil) {
-  use process_id <- result.map(process.named(name))
-  Client(process_id, name)
+pub fn named_client(name: process.Name(Message)) -> Client {
+  Client(name)
 }

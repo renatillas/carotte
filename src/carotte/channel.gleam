@@ -6,8 +6,8 @@ pub type Channel {
 }
 
 /// Open a channel to a RabbitMQ server
-pub fn open_channel(carotte_client: carotte.Client) {
-  do_open_channel(carotte_client)
+pub fn open_channel(client: carotte.Client) {
+  do_open_channel(client)
 }
 
 @external(erlang, "carotte_ffi", "open_channel")

@@ -438,12 +438,12 @@ pub fn supervised_test() {
   let process_name = process.new_name("supervised_test")
   let client = carotte.supervised(carotte.default_client(process_name))
 
-  let assert Ok(_sup) =
+  let assert Ok(actor.Started(sup_pid, _sup)) =
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.add(client)
     |> static_supervisor.start()
 
-  let assert Ok(client) = carotte.named_client(process_name)
+  let client = carotte.named_client(process_name)
 
   let assert Ok(value) = channel.open_channel(client)
   let channel = value
@@ -471,4 +471,8 @@ pub fn supervised_test() {
       payload: "test",
       options: [],
     )
+
+  // No need to explicitly close - let the supervisor handle cleanup
+  // when the test ends naturally
+  Nil
 }
