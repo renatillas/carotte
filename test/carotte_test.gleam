@@ -438,7 +438,7 @@ pub fn supervised_test() {
   let process_name = process.new_name("supervised_test")
   let client = carotte.supervised(carotte.default_client(process_name))
 
-  let assert Ok(actor.Started(sup_pid, _sup)) =
+  let assert Ok(actor.Started(_sup_pid, _sup)) =
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.add(client)
     |> static_supervisor.start()

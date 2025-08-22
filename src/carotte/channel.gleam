@@ -7,10 +7,10 @@ pub type Channel {
 
 /// Open a channel to a RabbitMQ server
 pub fn open_channel(client: carotte.Client) {
-  do_open_channel(client)
+  do_open_channel(client.name)
 }
 
 @external(erlang, "carotte_ffi", "open_channel")
 fn do_open_channel(
-  carotte_client: carotte.Client,
+  carotte_client: process.Name(carotte.Message),
 ) -> Result(Channel, carotte.CarotteError)

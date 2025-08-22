@@ -12,6 +12,23 @@ pub type CarotteError {
   Closed
   AuthFailure(String)
   ProcessNotFound
+  AlreadyRegistered(String)
+  NotFound(String)
+  AccessRefused(String)
+  PreconditionFailed(String)
+  ResourceLocked(String)
+  ChannelClosed(String)
+  ConnectionRefused(String)
+  ConnectionTimeout(String)
+  FrameError(String)
+  InternalError(String)
+  InvalidPath(String)
+  NoRoute(String)
+  NotAllowed(String)
+  NotImplemented(String)
+  UnexpectedFrame(String)
+  CommandInvalid(String)
+  UnknownError(String)
 }
 
 pub opaque type Builder {
@@ -33,16 +50,16 @@ pub type Message
 
 pub fn default_client(name name: process.Name(Message)) -> Builder {
   Builder(
-    "guest",
-    "guest",
-    "/",
-    "localhost",
-    5672,
-    2074,
-    0,
-    10,
-    60_000,
     name: name,
+    username: "guest",
+    password: "guest",
+    virtual_host: "/",
+    host: "localhost",
+    port: 5672,
+    channel_max: 2074,
+    frame_max: 0,
+    heartbeat: 10,
+    connection_timeout: 60_000,
   )
 }
 
@@ -105,6 +122,23 @@ pub fn start(builder: Builder) -> actor.StartResult(Client) {
         Closed -> actor.InitFailed("Closed connection")
         AuthFailure(reason) -> actor.InitFailed("AuthFailure: " <> reason)
         ProcessNotFound -> actor.InitFailed("Process not found")
+        AlreadyRegistered(reason) -> actor.InitFailed("AlreadyRegistered: " <> reason)
+        NotFound(reason) -> actor.InitFailed("NotFound: " <> reason)
+        AccessRefused(reason) -> actor.InitFailed("AccessRefused: " <> reason)
+        PreconditionFailed(reason) -> actor.InitFailed("PreconditionFailed: " <> reason)
+        ResourceLocked(reason) -> actor.InitFailed("ResourceLocked: " <> reason)
+        ChannelClosed(reason) -> actor.InitFailed("ChannelClosed: " <> reason)
+        ConnectionRefused(reason) -> actor.InitFailed("ConnectionRefused: " <> reason)
+        ConnectionTimeout(reason) -> actor.InitFailed("ConnectionTimeout: " <> reason)
+        FrameError(reason) -> actor.InitFailed("FrameError: " <> reason)
+        InternalError(reason) -> actor.InitFailed("InternalError: " <> reason)
+        InvalidPath(reason) -> actor.InitFailed("InvalidPath: " <> reason)
+        NoRoute(reason) -> actor.InitFailed("NoRoute: " <> reason)
+        NotAllowed(reason) -> actor.InitFailed("NotAllowed: " <> reason)
+        NotImplemented(reason) -> actor.InitFailed("NotImplemented: " <> reason)
+        UnexpectedFrame(reason) -> actor.InitFailed("UnexpectedFrame: " <> reason)
+        CommandInvalid(reason) -> actor.InitFailed("CommandInvalid: " <> reason)
+        UnknownError(reason) -> actor.InitFailed("UnknownError: " <> reason)
       }
     }),
   )
