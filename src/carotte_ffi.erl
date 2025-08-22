@@ -5,7 +5,7 @@
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
          header_value_to_header_tuple/1]).
 
--record(client, {name}).
+-record(client, {pid}).
 -record(channel, {pid}).
 
 % Convert various AMQP errors to Gleam-compatible format
@@ -254,7 +254,7 @@ start(Name,
   end.
 
 open_channel(Client) ->
-  case amqp_connection:open_channel(Client#client.name) of
+  case amqp_connection:open_channel(Client#client.pid) of
     {ok, ChannelPid} ->
       {ok, #channel{pid = ChannelPid}};
     {error, Error} ->
@@ -629,7 +629,7 @@ unsubscribe(Channel, ConsumerTag, Nowait) ->
   end.
 
 close(CarotteClient) ->
-  case amqp_connection:close(CarotteClient#client.name) of
+  case amqp_connection:close(CarotteClient#client.pid) of
     ok ->
       {ok, nil};
     {error, Error} ->

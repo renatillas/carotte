@@ -19,7 +19,7 @@ pub fn declare_exchange_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) =
@@ -38,7 +38,7 @@ pub fn delete_exchange_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) =
@@ -59,7 +59,7 @@ pub fn bind_exchanges_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) =
@@ -95,7 +95,7 @@ pub fn unbind_exchanges_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) =
@@ -132,7 +132,7 @@ pub fn declare_queue_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(value) = queue.declare(queue.new("declare_queue"), channel)
@@ -146,7 +146,7 @@ pub fn declare_queue_async_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(value) =
@@ -161,7 +161,7 @@ pub fn delete_queue_async_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("delete_queue"), channel)
@@ -175,7 +175,7 @@ pub fn bind_queue_test() {
     carotte.start(carotte.default_client(process.new_name("bind_queue_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("bind_queue"), channel)
@@ -197,7 +197,7 @@ pub fn unbind_queue_test() {
     carotte.start(carotte.default_client(process.new_name("unbind_queue_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("unbind_queue"), channel)
@@ -227,7 +227,7 @@ pub fn purge_queue_test() {
     carotte.start(carotte.default_client(process.new_name("purge_queue_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("purge_queue"), channel)
@@ -243,7 +243,7 @@ pub fn purge_queue_async_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("purge_queue_async"), channel)
@@ -257,7 +257,7 @@ pub fn queue_status_test() {
     carotte.start(carotte.default_client(process.new_name("queue_status_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = queue.declare(queue.new("queue_status"), channel)
@@ -271,7 +271,7 @@ pub fn publish_test() {
     carotte.start(carotte.default_client(process.new_name("publish_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = exchange.declare(exchange.new("p_exchange"), channel)
@@ -295,7 +295,7 @@ pub fn publish_with_options_test() {
     )
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = exchange.declare(exchange.new("pwo_exchange"), channel)
@@ -335,7 +335,7 @@ pub fn subscribe_test() {
     carotte.start(carotte.default_client(process.new_name("subscribe_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) = exchange.declare(exchange.new("consume_exchange"), channel)
@@ -374,7 +374,7 @@ pub fn unsubscribe_test() {
     carotte.start(carotte.default_client(process.new_name("unsubscribe_test")))
   let client = value
 
-  let assert Ok(value) = channel.open_channel(client.data)
+  let assert Ok(value) = channel.open_channel(client)
   let channel = value
 
   let assert Ok(_) =
@@ -429,50 +429,7 @@ pub fn auth_failure_test() {
     |> carotte.with_password("wrong")
     |> carotte.start()
   assert value
-    == actor.InitFailed(
-      "AuthFailure: ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.",
+    == carotte.AuthFailure(
+      "ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.",
     )
-}
-
-pub fn supervised_test() {
-  let process_name = process.new_name("supervised_test")
-  let client = carotte.supervised(carotte.default_client(process_name))
-
-  let assert Ok(actor.Started(_sup_pid, _sup)) =
-    static_supervisor.new(static_supervisor.OneForOne)
-    |> static_supervisor.add(client)
-    |> static_supervisor.start()
-
-  let client = carotte.named_client(process_name)
-
-  let assert Ok(value) = channel.open_channel(client)
-  let channel = value
-
-  let assert Ok(_) =
-    exchange.new("supervised_exchange")
-    |> exchange.with_type(exchange.Direct)
-    |> exchange.declare(channel)
-
-  let assert Ok(_) = queue.declare(queue.new("supervised_queue"), channel)
-
-  let assert Ok(_) =
-    queue.bind(
-      channel: channel,
-      queue: "supervised_queue",
-      exchange: "supervised_exchange",
-      routing_key: "",
-    )
-
-  let assert Ok(_) =
-    publisher.publish(
-      channel: channel,
-      exchange: "supervised_exchange",
-      routing_key: "",
-      payload: "test",
-      options: [],
-    )
-
-  // No need to explicitly close - let the supervisor handle cleanup
-  // when the test ends naturally
-  Nil
 }
