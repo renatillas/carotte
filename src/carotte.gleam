@@ -1,6 +1,4 @@
 import gleam/erlang/process
-import gleam/otp/actor
-import gleam/otp/supervision
 import gleam/result
 
 pub opaque type Client {
@@ -33,7 +31,6 @@ pub type CarotteError {
 
 pub opaque type Builder {
   Builder(
-    name: process.Name(Message),
     username: String,
     password: String,
     virtual_host: String,
@@ -46,9 +43,6 @@ pub opaque type Builder {
   )
 }
 
-/// Message type used for the client process
-pub type Message
-
 /// Create a new client builder with default settings.
 /// Uses guest/guest credentials on localhost:5672.
 /// 
@@ -57,9 +51,8 @@ pub type Message
 /// let client = carotte.default_client(process.new_name("my_client"))
 ///   |> carotte.start()
 /// ```
-pub fn default_client(name name: process.Name(Message)) -> Builder {
+pub fn default_client() -> Builder {
   Builder(
-    name: name,
     username: "guest",
     password: "guest",
     virtual_host: "/",
@@ -132,7 +125,6 @@ pub fn with_connection_timeout(
 /// ```
 pub fn start(builder: Builder) -> Result(Client, CarotteError) {
   use pid <- result.map(do_start(
-    builder.name,
     builder.username,
     builder.password,
     builder.virtual_host,
@@ -148,7 +140,6 @@ pub fn start(builder: Builder) -> Result(Client, CarotteError) {
 
 @external(erlang, "carotte_ffi", "start")
 fn do_start(
-  name: process.Name(Message),
   username: String,
   password: String,
   virtual_host: String,

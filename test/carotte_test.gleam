@@ -4,8 +4,6 @@ import carotte/exchange
 import carotte/publisher
 import carotte/queue
 import gleam/erlang/process
-import gleam/otp/actor
-import gleam/otp/static_supervisor
 import gleeunit
 
 pub fn main() {
@@ -13,10 +11,7 @@ pub fn main() {
 }
 
 pub fn declare_exchange_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("declare_exchange_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -32,10 +27,7 @@ pub fn declare_exchange_test() {
 }
 
 pub fn delete_exchange_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("delete_exchange_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -53,10 +45,7 @@ pub fn delete_exchange_test() {
 }
 
 pub fn bind_exchanges_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("bind_exchanges_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -89,10 +78,7 @@ pub fn bind_exchanges_test() {
 }
 
 pub fn unbind_exchanges_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("unbind_exchanges_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -126,10 +112,7 @@ pub fn unbind_exchanges_test() {
 }
 
 pub fn declare_queue_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("declare_queue_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -140,10 +123,7 @@ pub fn declare_queue_test() {
 }
 
 pub fn declare_queue_async_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("declare_queue_async_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -155,10 +135,7 @@ pub fn declare_queue_async_test() {
 }
 
 pub fn delete_queue_async_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("delete_queue_async_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -171,8 +148,7 @@ pub fn delete_queue_async_test() {
 }
 
 pub fn bind_queue_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("bind_queue_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -193,8 +169,7 @@ pub fn bind_queue_test() {
 }
 
 pub fn unbind_queue_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("unbind_queue_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -223,8 +198,7 @@ pub fn unbind_queue_test() {
 }
 
 pub fn purge_queue_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("purge_queue_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -237,10 +211,7 @@ pub fn purge_queue_test() {
 }
 
 pub fn purge_queue_async_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("purge_queue_async_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -253,8 +224,7 @@ pub fn purge_queue_async_test() {
 }
 
 pub fn queue_status_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("queue_status_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -267,8 +237,7 @@ pub fn queue_status_test() {
 }
 
 pub fn publish_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("publish_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -289,10 +258,7 @@ pub fn publish_test() {
 }
 
 pub fn publish_with_options_test() {
-  let assert Ok(value) =
-    carotte.start(
-      carotte.default_client(process.new_name("publish_with_options_test")),
-    )
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -331,8 +297,7 @@ pub fn publish_with_options_test() {
 }
 
 pub fn subscribe_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("subscribe_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -370,8 +335,7 @@ pub fn subscribe_test() {
 }
 
 pub fn unsubscribe_test() {
-  let assert Ok(value) =
-    carotte.start(carotte.default_client(process.new_name("unsubscribe_test")))
+  let assert Ok(value) = carotte.start(carotte.default_client())
   let client = value
 
   let assert Ok(value) = channel.open_channel(client)
@@ -425,7 +389,7 @@ pub fn unsubscribe_test() {
 
 pub fn auth_failure_test() {
   let assert Error(value) =
-    carotte.default_client(process.new_name("auth_failure_test"))
+    carotte.default_client()
     |> carotte.with_password("wrong")
     |> carotte.start()
   assert value

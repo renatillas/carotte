@@ -1,6 +1,6 @@
 -module(carotte_ffi).
 
--export([start/10, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3,
+-export([start/9, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
          header_value_to_header_tuple/1]).
@@ -220,8 +220,7 @@ convert_error(Error) ->
          client_properties = [],
          socket_options = []}).
 
-start(Name,
-      Username,
+start(Username,
       Password,
       VirtualHost,
       Host,
@@ -230,27 +229,20 @@ start(Name,
       FrameMax,
       Heartbeat,
       ConnectionTimeout) ->
-  % Check if name is already registered
-  case erlang:whereis(Name) of
-    undefined ->
-      case amqp_connection:start(#amqp_params_network{username = Username,
-                                                      password = Password,
-                                                      virtual_host = VirtualHost,
-                                                      host = binary_to_list(Host),
-                                                      port = Port,
-                                                      channel_max = ChannelMax,
-                                                      frame_max = FrameMax,
-                                                      heartbeat = Heartbeat,
-                                                      connection_timeout = ConnectionTimeout})
-      of
-        {ok, Pid} ->
-          erlang:register(Name, Pid),
-          {ok, Pid};
-        {error, Error} ->
-          convert_error(Error)
-      end;
-    _ ->
-      convert_error(already_registered)
+  case amqp_connection:start(#amqp_params_network{username = Username,
+                                                  password = Password,
+                                                  virtual_host = VirtualHost,
+                                                  host = binary_to_list(Host),
+                                                  port = Port,
+                                                  channel_max = ChannelMax,
+                                                  frame_max = FrameMax,
+                                                  heartbeat = Heartbeat,
+                                                  connection_timeout = ConnectionTimeout})
+  of
+    {ok, Pid} ->
+      {ok, Pid};
+    {error, Error} ->
+      convert_error(Error)
   end.
 
 open_channel(Client) ->
