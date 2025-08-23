@@ -28,7 +28,7 @@ pub fn manual_ack_test() {
       payload: "test message for ack",
       options: [],
     )
-  
+
   let message_subject = process.new_subject()
 
   let assert Ok(_consumer_tag) =
@@ -43,7 +43,7 @@ pub fn manual_ack_test() {
       },
       options: [queue.AutoAck(False)],
     )
-  
+
   // Verify message is received and processed
   let assert Ok("test message for ack") = process.receive(message_subject, 1000)
 }
@@ -64,7 +64,7 @@ pub fn ack_single_test() {
       exchange: "test_ack_single_exchange",
       routing_key: "",
     )
-  
+
   // Publish two messages
   let assert Ok(Nil) =
     publisher.publish(
@@ -82,7 +82,7 @@ pub fn ack_single_test() {
       payload: "message 2",
       options: [],
     )
-  
+
   let message_subject = process.new_subject()
 
   // Subscribe and acknowledge each message individually
@@ -120,7 +120,7 @@ pub fn ack_multiple_test() {
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
     )
-  
+
   // Publish 5 messages
   let assert Ok(Nil) =
     publisher.publish(
@@ -162,7 +162,7 @@ pub fn ack_multiple_test() {
       payload: "message 5",
       options: [],
     )
-  
+
   let message_subject = process.new_subject()
   let ack_subject = process.new_subject()
 
@@ -209,7 +209,7 @@ pub fn test_unacked_then_acked() {
   let assert Ok(_) = queue.declare(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) = queue.purge(ch, "test_unacked_then_acked_queue")
-  
+
   // Publish 3 messages directly to queue
   let assert Ok(Nil) =
     publisher.publish(
@@ -235,7 +235,7 @@ pub fn test_unacked_then_acked() {
       payload: "msg3",
       options: [],
     )
-  
+
   // First consumer - receive but DON'T ack
   let received = process.new_subject()
   let assert Ok(consumer_tag) =
@@ -249,16 +249,16 @@ pub fn test_unacked_then_acked() {
       },
       options: [queue.AutoAck(False)],
     )
-  
+
   // Receive all messages without acking
   let assert Ok("msg1") = process.receive(received, 1000)
   let assert Ok("msg2") = process.receive(received, 1000)
   let assert Ok("msg3") = process.receive(received, 1000)
-  
+
   // Unsubscribe to release unacked messages back to queue
   let assert Ok(Nil) = queue.unsubscribe(ch, consumer_tag)
   process.sleep(100)
-  
+
   // Second consumer - now ACK the messages
   let received2 = process.new_subject()
   let assert Ok(_consumer_tag) =
@@ -273,7 +273,7 @@ pub fn test_unacked_then_acked() {
       },
       options: [queue.AutoAck(False)],
     )
-  
+
   // Messages should be redelivered and then acknowledged
   let assert Ok("msg1") = process.receive(received2, 1000)
   let assert Ok("msg2") = process.receive(received2, 1000)
@@ -287,7 +287,7 @@ pub fn test_redelivery_flag() {
   let assert Ok(_) = queue.declare(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) = queue.purge(ch, "test_redelivery_flag_queue")
-  
+
   // Publish a message
   let assert Ok(Nil) =
     publisher.publish(
@@ -297,7 +297,7 @@ pub fn test_redelivery_flag() {
       payload: "test redelivery",
       options: [],
     )
-  
+
   // First consumer - receive but don't ack
   let received = process.new_subject()
   let redelivery_flag = process.new_subject()
@@ -313,19 +313,19 @@ pub fn test_redelivery_flag() {
       },
       options: [queue.AutoAck(False)],
     )
-  
+
   // Receive the message and check it's not marked as redelivered
   let assert Ok("test redelivery") = process.receive(received, 1000)
   let assert Ok(False) = process.receive(redelivery_flag, 1000)
-  
+
   // Cancel consumer - message should be requeued
   let assert Ok(Nil) = queue.unsubscribe(ch, consumer_tag)
   process.sleep(100)
-  
+
   // Subscribe again - should get redelivered message
   let redelivered = process.new_subject()
   let redelivery_flag2 = process.new_subject()
-  
+
   let assert Ok(_consumer_tag) =
     queue.subscribe_with_options(
       channel: ch,
@@ -339,7 +339,7 @@ pub fn test_redelivery_flag() {
       },
       options: [queue.AutoAck(False)],
     )
-  
+
   // Receive the redelivered message and verify redelivered flag is True
   let assert Ok("test redelivery") = process.receive(redelivered, 1000)
   let assert Ok(True) = process.receive(redelivery_flag2, 1000)
