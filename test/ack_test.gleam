@@ -26,26 +26,21 @@ pub fn manual_ack_test() {
       payload: "test message for ack",
       options: [],
     )
+  let message_subject = process.new_subject()
 
   let assert Ok(_consumer_tag) =
-    queue.subscribe(
+    queue.subscribe_with_options(
       channel: ch,
       queue: "test_ack_queue",
       callback: fn(msg, deliver) {
-        assert msg.payload == "test message for ack"
+        process.send(message_subject, msg.payload)
         let _ = queue.ack(ch, deliver.delivery_tag, False)
         Nil
       },
+      options: [queue.RequiredAck(True)],
     )
   process.sleep(1000)
-
-  let assert Ok(_) =
-    queue.delete(
-      channel: ch,
-      queue: "test_ack_queue",
-      if_unused: False,
-      if_empty: False,
-    )
+  let assert Ok("test message for ack") = process.receive(message_subject, 1000)
 }
 
 pub fn ack_single_test() {
@@ -62,7 +57,7 @@ pub fn ack_single_test() {
       exchange: "test_ack_single_exchange",
       routing_key: "",
     )
-
+  let message_subject = process.new_subject()
   assert Ok(Nil)
     == publisher.publish(
       channel: ch,
@@ -82,25 +77,21 @@ pub fn ack_single_test() {
 
   // Then subscribe to the queue
   let assert Ok(_consumer_tag) =
-    queue.subscribe(
+    queue.subscribe_with_options(
       channel: ch,
       queue: "test_ack_single_queue",
-      callback: fn(msg, meta) {
+      callback: fn(msg, deliver) {
         // Assert we got message 1 and use ack_single to acknowledge it
-        assert msg.payload == "message 1" || msg.payload == "message 2"
-        let _ = queue.ack_single(ch, meta.delivery_tag)
+        process.send(message_subject, msg.payload)
+        let _ = queue.ack_single(ch, deliver.delivery_tag)
         Nil
       },
+      options: [queue.RequiredAck(True)],
     )
 
   process.sleep(1000)
-  let assert Ok(_) =
-    queue.delete(
-      channel: ch,
-      queue: "test_ack_single_queue",
-      if_unused: False,
-      if_empty: False,
-    )
+  let assert Ok("message 1") = process.receive(message_subject, 1000)
+  let assert Ok("message 2") = process.receive(message_subject, 1000)
 }
 
 pub fn ack_multiple_test() {
@@ -117,9 +108,7 @@ pub fn ack_multiple_test() {
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
     )
-
-  // Publish multiple test messages first
-  let assert Ok(_) =
+  let assert Ok(Nil) =
     publisher.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
@@ -127,7 +116,7 @@ pub fn ack_multiple_test() {
       payload: "message A",
       options: [],
     )
-  let assert Ok(_) =
+  let assert Ok(Nil) =
     publisher.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
@@ -135,7 +124,7 @@ pub fn ack_multiple_test() {
       payload: "message B",
       options: [],
     )
-  let assert Ok(_) =
+  let assert Ok(Nil) =
     publisher.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
@@ -143,33 +132,26 @@ pub fn ack_multiple_test() {
       payload: "message C",
       options: [],
     )
+  let message_subject = process.new_subject()
 
-  // Then subscribe to the queue
   let assert Ok(_consumer_tag) =
     queue.subscribe(
       channel: ch,
       queue: "test_ack_multiple_queue",
       callback: fn(msg, meta) {
-        assert msg.payload == "message A"
-          || msg.payload == "message B"
-          || msg.payload == "message C"
+        process.send(message_subject, msg.payload)
         case msg.payload {
           "message C" -> {
-            let assert Ok(_) = queue.ack(ch, meta.delivery_tag, True)
+            let assert Ok(Nil) = queue.ack(ch, meta.delivery_tag, True)
             Nil
           }
           _ -> Nil
         }
-        Nil
       },
     )
 
   process.sleep(1000)
-  let assert Ok(_) =
-    queue.delete(
-      channel: ch,
-      queue: "test_ack_multiple_queue",
-      if_unused: False,
-      if_empty: False,
-    )
+  let assert Ok("message A") = process.receive(message_subject, 1000)
+  let assert Ok("message B") = process.receive(message_subject, 1000)
+  let assert Ok("message C") = process.receive(message_subject, 1000)
 }

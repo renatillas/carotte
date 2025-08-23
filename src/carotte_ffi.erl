@@ -1,6 +1,6 @@
 -module(carotte_ffi).
 
--export([start/9, close/1, open_channel/1, publish/5, consume/3, ack/3, unsubscribe/3,
+-export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
          header_value_to_header_tuple/1]).
@@ -585,13 +585,22 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
          exclusive = false,
          nowait = false,
          arguments = []}).
+-record('basic.consume_ok', {consumer_tag}).
 
-consume(Channel, Queue, Pid) ->
-  case amqp_channel:subscribe(Channel#channel.pid, #'basic.consume'{queue = Queue}, Pid) of
+consume(Channel, Queue, Pid, RequiredAck) ->
+  % Set no_ack to true so messages are automatically acknowledged by RabbitMQ
+  % AMQP will send messages directly to Pid, including basic.consume_ok
+  case amqp_channel:subscribe(Channel#channel.pid,
+                              #'basic.consume'{queue = Queue, no_ack = RequiredAck},
+                              Pid)
+  of
     {'basic.consume_ok', ConsumerTag_} ->
+      % The AMQP client might send basic.consume_ok directly to Pid
+      % Don't send it again
       {ok, ConsumerTag_};
-    Error ->
-      convert_error(Error)
+    _ ->
+      io:write("Unexpected response in consume/3\n"),
+      {error, unexpected_response}
   end.
 
 -record('basic.ack', {delivery_tag = 0, multiple = false}).

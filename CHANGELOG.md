@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Queue declaration now properly handles queue names when declaring exclusive queues
+- Fixed FFI error handling to properly convert Erlang error reasons to strings
+
 ## [2.0.0] - 2024-01-23
 
 ### Changed
