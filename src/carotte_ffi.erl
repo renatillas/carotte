@@ -585,13 +585,12 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
          exclusive = false,
          nowait = false,
          arguments = []}).
--record('basic.consume_ok', {consumer_tag}).
 
-consume(Channel, Queue, Pid, RequiredAck) ->
+consume(Channel, Queue, Pid, AutoAck) ->
   % Set no_ack to true so messages are automatically acknowledged by RabbitMQ
   % AMQP will send messages directly to Pid, including basic.consume_ok
   case amqp_channel:subscribe(Channel#channel.pid,
-                              #'basic.consume'{queue = Queue, no_ack = RequiredAck},
+                              #'basic.consume'{queue = Queue, no_ack = AutoAck},
                               Pid)
   of
     {'basic.consume_ok', ConsumerTag_} ->
@@ -599,7 +598,6 @@ consume(Channel, Queue, Pid, RequiredAck) ->
       % Don't send it again
       {ok, ConsumerTag_};
     _ ->
-      io:write("Unexpected response in consume/3\n"),
       {error, unexpected_response}
   end.
 

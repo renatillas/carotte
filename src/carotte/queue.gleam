@@ -29,7 +29,7 @@ pub type Deliver {
 }
 
 pub type QueueOption {
-  RequiredAck(Bool)
+  AutoAck(Bool)
 }
 
 pub type Payload {
@@ -243,7 +243,7 @@ pub fn subscribe(
   let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
   // Give the process time to start
   process.sleep(10)
-  do_consume_ffi(channel, queue, consumer_pid, False)
+  do_consume_ffi(channel, queue, consumer_pid, True)
 }
 
 pub fn subscribe_with_options(
@@ -252,13 +252,12 @@ pub fn subscribe_with_options(
   options options: List(QueueOption),
   callback fun: fn(Payload, Deliver) -> Nil,
 ) -> Result(String, carotte.CarotteError) {
-  let required_ack = case options {
-    [] -> False
-    [RequiredAck(ack), ..] -> ack
+  let auto_ack = case options {
+    [] -> True
+    [AutoAck(ack), ..] -> !ack
   }
   let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
-  process.sleep(10)
-  do_consume_ffi(channel, queue, consumer_pid, required_ack)
+  do_consume_ffi(channel, queue, consumer_pid, auto_ack)
 }
 
 @external(erlang, "carotte_ffi", "consume")

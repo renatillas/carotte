@@ -37,7 +37,7 @@ pub fn manual_ack_test() {
         let _ = queue.ack(ch, deliver.delivery_tag, False)
         Nil
       },
-      options: [queue.RequiredAck(True)],
+      options: [queue.AutoAck(True)],
     )
   process.sleep(1000)
   let assert Ok("test message for ack") = process.receive(message_subject, 1000)
@@ -86,7 +86,7 @@ pub fn ack_single_test() {
         let _ = queue.ack_single(ch, deliver.delivery_tag)
         Nil
       },
-      options: [queue.RequiredAck(True)],
+      options: [queue.AutoAck(False)],
     )
 
   process.sleep(1000)
