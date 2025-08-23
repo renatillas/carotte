@@ -1,34 +1,62 @@
 import gleam/erlang/process
 import gleam/result
 
+/// Represents an active connection to a RabbitMQ server.
+/// This is an opaque type that encapsulates the underlying AMQP client process.
+/// Use the builder pattern with `default_client()` and `start()` to create a client.
 pub opaque type Client {
   Client(process.Pid)
 }
 
+/// Errors that can occur when interacting with RabbitMQ.
 pub type CarotteError {
+  /// The connection is blocked by the server due to resource constraints
   Blocked
+  /// The connection or channel has been closed
   Closed
+  /// Authentication failed with the provided credentials
   AuthFailure(String)
+  /// The specified process could not be found
   ProcessNotFound
+  /// The resource is already registered with the given name
   AlreadyRegistered(String)
+  /// The requested resource was not found
   NotFound(String)
+  /// Access to the resource was refused
   AccessRefused(String)
+  /// A precondition for the operation failed
   PreconditionFailed(String)
+  /// The resource is locked and cannot be accessed
   ResourceLocked(String)
+  /// The channel has been closed
   ChannelClosed(String)
+  /// Connection to the server was refused
   ConnectionRefused(String)
+  /// Connection attempt timed out
   ConnectionTimeout(String)
+  /// An error occurred while processing AMQP frames
   FrameError(String)
+  /// An internal server error occurred
   InternalError(String)
+  /// The provided path is invalid
   InvalidPath(String)
+  /// No route exists to the specified exchange or queue
   NoRoute(String)
+  /// The requested operation is not allowed
   NotAllowed(String)
+  /// The requested feature is not implemented
   NotImplemented(String)
+  /// An unexpected frame was received
   UnexpectedFrame(String)
+  /// The AMQP command is invalid
   CommandInvalid(String)
+  /// An unknown error occurred
   UnknownError(String)
 }
 
+/// Configuration builder for creating a RabbitMQ client.
+/// Use `default_client()` to create a builder with sensible defaults,
+/// then chain the `with_*` functions to customize the configuration.
 pub opaque type Builder {
   Builder(
     username: String,
