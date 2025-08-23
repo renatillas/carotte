@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `subscribe_with_options` function for subscribing to queues with custom options
-- `QueueOption` type with `RequiredAck` option for controlling message acknowledgment behavior
+- `QueueOption` type with `AutoAck` option for controlling message acknowledgment behavior
 
 ### Fixed
 - Queue declaration now properly handles queue names when declaring exclusive queues
