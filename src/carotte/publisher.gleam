@@ -31,6 +31,17 @@ fn header_value_to_header_tuple(
   value: HeaderValue,
 ) -> #(atom.Atom, dynamic.Dynamic)
 
+/// Create a HeaderList from a list of name-value pairs.
+/// Use this to construct headers for messages.
+/// 
+/// ## Example
+/// ```gleam
+/// let headers = headers_from_list([
+///   #("user_id", StringHeader("123")),
+///   #("retry_count", IntHeader(3)),
+///   #("is_test", BoolHeader(True)),
+/// ])
+/// ```
 pub fn headers_from_list(list: List(#(String, HeaderValue))) -> HeaderList {
   list
   |> list.map(fn(item) {

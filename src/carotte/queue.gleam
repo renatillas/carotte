@@ -358,7 +358,7 @@ fn do_consume(channel, fun) {
     })
     |> process.selector_receive_forever()
   fun(payload, basic_deliver)
-  do_basic_ack(channel, basic_deliver.delivery_tag, False)
+  let _ = do_basic_ack(channel, basic_deliver.delivery_tag, False)
   do_consume(channel, fun)
 }
 
@@ -367,7 +367,44 @@ fn do_basic_ack(
   channel: channel.Channel,
   delivery_tag: Int,
   multiple: Bool,
-) -> Nil
+) -> Result(Nil, carotte.CarotteError)
+
+/// Acknowledge a message delivery.
+/// Used when manual acknowledgment is enabled (NoAck(False)).
+/// 
+/// ## Parameters
+/// - `channel`: The channel to acknowledge on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `multiple`: If True, acknowledges all messages up to and including this delivery tag
+/// 
+/// ## Example
+/// ```gleam
+/// queue.subscribe_with_options(
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [queue.NoAck(False)],
+///   callback: fn(msg, meta) {
+///     // Process message
+///     let _ = queue.ack(ch, meta.delivery_tag, False)
+///   },
+/// )
+/// ```
+pub fn ack(
+  channel: channel.Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+) -> Result(Nil, carotte.CarotteError) {
+  do_basic_ack(channel, delivery_tag, multiple)
+}
+
+/// Acknowledge a message delivery (acknowledges only this message).
+/// Convenience function for ack with multiple=False.
+pub fn ack_single(
+  channel: channel.Channel,
+  delivery_tag: Int,
+) -> Result(Nil, carotte.CarotteError) {
+  do_basic_ack(channel, delivery_tag, False)
+}
 
 /// Unsubscribe a consumer from a queue
 pub fn unsubscribe(

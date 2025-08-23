@@ -2,34 +2,12 @@ import carotte
 import carotte/channel
 import carotte/exchange
 import carotte/queue
-import gleam/erlang/process
 import gleam/io
-import gleam/otp/actor
-import gleeunit/should
-
-// Test that we get AlreadyRegistered error when trying to use same name twice
-pub fn already_registered_error_test() {
-  let process_name = process.new_name("already_registered_test")
-
-  // First client should succeed
-  let assert Ok(_client1) = carotte.start(carotte.default_client(process_name))
-
-  // Second client with same name should fail
-  let result = carotte.start(carotte.default_client(process_name))
-
-  case result {
-    Error(actor.InitFailed(msg)) -> {
-      should.equal(msg, "AlreadyRegistered: Process name already registered")
-    }
-    _ -> panic as "Expected AlreadyRegistered error"
-  }
-}
 
 // Test binding to invalid exchange - should get NotFound error
 pub fn exchange_not_found_test() {
-  let process_name = process.new_name("exchange_not_found_test")
-  let assert Ok(client) = carotte.start(carotte.default_client(process_name))
-  let assert Ok(ch) = channel.open_channel(client.data)
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = channel.open_channel(client)
 
   // Create a source exchange
   let assert Ok(_) = exchange.declare(exchange.new("test_source_ex"), ch)
@@ -58,9 +36,8 @@ pub fn exchange_not_found_test() {
 
 // Test queue operations with invalid parameters - should get AccessRefused
 pub fn queue_access_refused_test() {
-  let process_name = process.new_name("queue_access_refused_test")
-  let assert Ok(client) = carotte.start(carotte.default_client(process_name))
-  let assert Ok(ch) = channel.open_channel(client.data)
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = channel.open_channel(client)
 
   // Try to declare a queue with invalid name (starting with amq. is reserved)
   let result = queue.declare(queue.new("amq.reserved.name"), ch)
@@ -79,9 +56,8 @@ pub fn queue_access_refused_test() {
 
 // Test binding queue to non-existent exchange - should get NotFound
 pub fn bind_to_nonexistent_exchange_test() {
-  let process_name = process.new_name("bind_nonexistent_test")
-  let assert Ok(client) = carotte.start(carotte.default_client(process_name))
-  let assert Ok(ch) = channel.open_channel(client.data)
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = channel.open_channel(client)
 
   // Create a queue
   let assert Ok(_) = queue.declare(queue.new("test_queue_bind"), ch)
@@ -110,12 +86,11 @@ pub fn bind_to_nonexistent_exchange_test() {
 
 // Test operations on closed channel - should get ProcessNotFound or Closed
 pub fn closed_channel_test() {
-  let process_name = process.new_name("closed_channel_test")
-  let assert Ok(client) = carotte.start(carotte.default_client(process_name))
-  let assert Ok(ch) = channel.open_channel(client.data)
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = channel.open_channel(client)
 
   // Close the connection
-  let _ = carotte.close(client.data)
+  let _ = carotte.close(client)
 
   // Try to use the channel after closing
   let result = queue.declare(queue.new("test_after_close"), ch)
@@ -136,9 +111,8 @@ pub fn closed_channel_test() {
 
 // Test deleting a queue that is in use - should get PreconditionFailed
 pub fn delete_queue_in_use_test() {
-  let process_name = process.new_name("delete_queue_in_use_test")
-  let assert Ok(client) = carotte.start(carotte.default_client(process_name))
-  let assert Ok(ch) = channel.open_channel(client.data)
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = channel.open_channel(client)
 
   // Create a queue
   let assert Ok(_) = queue.declare(queue.new("queue_in_use"), ch)
@@ -168,11 +142,8 @@ pub fn delete_queue_in_use_test() {
 
 // Test exclusive queue access - should get ResourceLocked
 pub fn exclusive_queue_test() {
-  let process_name1 = process.new_name("exclusive_queue_test1")
-  let process_name2 = process.new_name("exclusive_queue_test2")
-
-  let assert Ok(client1) = carotte.start(carotte.default_client(process_name1))
-  let assert Ok(ch1) = channel.open_channel(client1.data)
+  let assert Ok(client1) = carotte.start(carotte.default_client())
+  let assert Ok(ch1) = channel.open_channel(client1)
 
   // Create an exclusive queue
   let assert Ok(_) =
@@ -181,8 +152,8 @@ pub fn exclusive_queue_test() {
     |> queue.declare(ch1)
 
   // Try to access the same queue from another connection
-  let assert Ok(client2) = carotte.start(carotte.default_client(process_name2))
-  let assert Ok(ch2) = channel.open_channel(client2.data)
+  let assert Ok(client2) = carotte.start(carotte.default_client())
+  let assert Ok(ch2) = channel.open_channel(client2)
 
   let result = queue.status(ch2, "exclusive_test_queue")
 
