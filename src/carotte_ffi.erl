@@ -587,7 +587,6 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
          arguments = []}).
 
 consume(Channel, Queue, Pid, AutoAck) ->
-  % Set no_ack to true so messages are automatically acknowledged by RabbitMQ
   % AMQP will send messages directly to Pid, including basic.consume_ok
   case amqp_channel:subscribe(Channel#channel.pid,
                               #'basic.consume'{queue = Queue, no_ack = AutoAck},

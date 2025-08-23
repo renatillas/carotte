@@ -222,7 +222,7 @@ pub fn publish_with_options_test() {
       channel: channel,
       exchange: "pwo_exchange",
       routing_key: "",
-      payload: "test",
+      payload: "publish with options",
       options: [
         publisher.Mandatory(True),
         publisher.ContentType("text/plain"),
