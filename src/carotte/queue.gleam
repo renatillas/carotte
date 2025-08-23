@@ -254,7 +254,7 @@ fn do_consume_ffi(
   pid: process.Pid,
 ) -> Result(String, carotte.CarotteError)
 
-fn do_start_consumer(channel, fun) {
+fn do_start_consumer(channel, fun) -> Nil {
   let _consumer_tag =
     process.new_selector()
     |> process.select_record(atom.create("basic.consume_ok"), 2, fn(dyn) {
@@ -266,7 +266,7 @@ fn do_start_consumer(channel, fun) {
   do_consume(channel, fun)
 }
 
-fn do_consume(channel, fun) {
+fn do_consume(channel, fun) -> Nil {
   let #(basic_deliver, payload) =
     process.new_selector()
     |> process.select_record(atom.create("basic.cancel"), 2, fn(_consumer_tag) {
@@ -357,9 +357,12 @@ fn do_consume(channel, fun) {
       decoded
     })
     |> process.selector_receive_forever()
+
   fun(payload, basic_deliver)
-  let _ = do_basic_ack(channel, basic_deliver.delivery_tag, False)
-  do_consume(channel, fun)
+  case do_basic_ack(channel, basic_deliver.delivery_tag, False) {
+    Ok(_) -> Nil
+    Error(_) -> process.send_exit(process.self())
+  }
 }
 
 @external(erlang, "carotte_ffi", "ack")
