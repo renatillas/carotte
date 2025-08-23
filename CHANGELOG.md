@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `subscribe_with_options` function for subscribing to queues with custom options
+- `QueueOption` type with `RequiredAck` option for controlling message acknowledgment behavior
+
 ### Fixed
 - Queue declaration now properly handles queue names when declaring exclusive queues
 - Fixed FFI error handling to properly convert Erlang error reasons to strings
+- Acknowledgment functions now work correctly with proper FFI bindings
+- Consumer subscription with manual acknowledgment mode now functions properly
 
 ## [2.0.0] - 2024-01-23
 
