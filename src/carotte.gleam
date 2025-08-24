@@ -148,7 +148,7 @@ pub fn with_connection_timeout(
 /// ```gleam
 /// case carotte.start(builder) {
 ///   Ok(client) -> // Use the client
-///   Error(actor.InitFailed(msg)) -> // Handle connection error
+///   Error(carotte_error) -> // Handle connection error
 /// }
 /// ```
 pub fn start(builder: Builder) -> Result(Client, CarotteError) {
