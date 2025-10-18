@@ -76,7 +76,7 @@ pub opaque type Builder {
 /// 
 /// ## Example
 /// ```gleam
-/// let client = carotte.default_client(process.new_name("my_client"))
+/// let client = carotte.default_client()
 ///   |> carotte.start()
 /// ```
 pub fn default_client() -> Builder {
