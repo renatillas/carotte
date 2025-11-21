@@ -252,12 +252,12 @@ pub fn subscribe_with_options(
   options options: List(QueueOption),
   callback fun: fn(Payload, Deliver) -> Nil,
 ) -> Result(String, carotte.CarotteError) {
-  let auto_ack = case options {
+  let no_ack = case options {
     [] -> True
-    [AutoAck(ack), ..] -> !ack
+    [AutoAck(auto_ack), ..] -> auto_ack
   }
   let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
-  do_consume_ffi(channel, queue, consumer_pid, auto_ack)
+  do_consume_ffi(channel, queue, consumer_pid, no_ack)
 }
 
 @external(erlang, "carotte_ffi", "consume")
@@ -405,7 +405,7 @@ fn do_basic_ack(
 ) -> Result(Nil, carotte.CarotteError)
 
 /// Acknowledge a message delivery.
-/// Used when manual acknowledgment is enabled (NoAck(False)).
+/// Used when manual acknowledgment is enabled (AutoAck(False)).
 /// 
 /// ## Parameters
 /// - `channel`: The channel to acknowledge on
@@ -417,7 +417,7 @@ fn do_basic_ack(
 /// queue.subscribe_with_options(
 ///   channel: ch,
 ///   queue: "my_queue",
-///   options: [queue.NoAck(False)],
+///   options: [queue.AutoAck(False)],
 ///   callback: fn(msg, meta) {
 ///     // Process message
 ///     let _ = queue.ack(ch, meta.delivery_tag, False)

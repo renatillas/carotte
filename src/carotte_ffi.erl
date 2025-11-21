@@ -586,10 +586,10 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
          nowait = false,
          arguments = []}).
 
-consume(Channel, Queue, Pid, AutoAck) ->
+consume(Channel, Queue, Pid, NoAck) ->
   % AMQP will send messages directly to Pid, including basic.consume_ok
   case amqp_channel:subscribe(Channel#channel.pid,
-                              #'basic.consume'{queue = Queue, no_ack = AutoAck},
+                              #'basic.consume'{queue = Queue, no_ack = NoAck},
                               Pid)
   of
     {'basic.consume_ok', ConsumerTag_} ->
