@@ -3,7 +3,7 @@
 -export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
-         header_value_to_header_tuple/1]).
+         header_value_to_header_tuple/1, parse_amqp_headers/1]).
 
 -record(client, {pid}).
 -record(channel, {pid}).
@@ -648,3 +648,13 @@ header_value_to_header_tuple(Value) ->
       {array,
        lists:map(fun({ArrayValue}) -> {header_value_to_header_tuple(ArrayValue)} end, Inner)}
   end.
+
+% Convert AMQP headers proplist to Gleam HeaderList format
+% AMQP headers: [{Name :: binary(), Type :: atom(), Value :: term()}, ...]
+% Gleam HeaderList: {header_list, [{Name, Type, Value}, ...]}
+parse_amqp_headers(undefined) ->
+  {header_list, []};
+parse_amqp_headers(Headers) when is_list(Headers) ->
+  {header_list, Headers};
+parse_amqp_headers(_) ->
+  {header_list, []}.
