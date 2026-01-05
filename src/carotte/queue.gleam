@@ -33,7 +33,11 @@ pub type QueueOption {
 }
 
 pub type Payload {
-  Payload(payload: String, properties: List(publisher.PublishOption))
+  Payload(
+    payload: String,
+    properties: List(publisher.PublishOption),
+    headers: publisher.HeaderList,
+  )
 }
 
 pub type DeclaredQueue {
@@ -224,6 +228,9 @@ fn do_purge(
   nowait: Bool,
 ) -> Result(Int, carotte.CarotteError)
 
+@external(erlang, "carotte_ffi", "parse_amqp_headers")
+fn parse_amqp_headers(headers: decode.Dynamic) -> publisher.HeaderList
+
 /// Get the status of a queue
 pub fn status(
   channel channel: channel.Channel,
@@ -240,7 +247,7 @@ pub fn subscribe(
   queue queue: String,
   callback fun: fn(Payload, Deliver) -> Nil,
 ) -> Result(String, carotte.CarotteError) {
-  let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
+  let consumer_pid = process.spawn(fn() { do_start_consumer(fun) })
   // Give the process time to start
   process.sleep(10)
   do_consume_ffi(channel, queue, consumer_pid, True)
@@ -256,7 +263,7 @@ pub fn subscribe_with_options(
     [] -> True
     [AutoAck(auto_ack), ..] -> auto_ack
   }
-  let consumer_pid = process.spawn(fn() { do_start_consumer(channel, fun) })
+  let consumer_pid = process.spawn(fn() { do_start_consumer(fun) })
   do_consume_ffi(channel, queue, consumer_pid, no_ack)
 }
 
@@ -268,7 +275,7 @@ fn do_consume_ffi(
   no_ack: Bool,
 ) -> Result(String, carotte.CarotteError)
 
-fn do_start_consumer(channel, fun) -> Nil {
+fn do_start_consumer(fun) -> Nil {
   // Wait for basic.consume_ok message first
   process.new_selector()
   |> process.select_record(
@@ -279,12 +286,12 @@ fn do_start_consumer(channel, fun) -> Nil {
   |> process.selector_receive_forever()
 
   // Now start consuming messages
-  do_consume(channel, fun)
+  do_consume(fun)
 }
 
 // #(atom.create_from_string("basic.cancel"), "amq.ctag-KEKFlqNp9GpBRVkQuIdLWA", True)
 
-fn do_consume(channel, fun) -> Nil {
+fn do_consume(fun) -> Nil {
   let #(basic_deliver, payload) =
     process.new_selector()
     |> process.select_record(atom.create("basic.cancel"), 2, fn(_consumer_tag) {
@@ -378,9 +385,12 @@ fn do_consume(channel, fun) -> Nil {
       let payload_decoder = {
         // The amqp_msg record is at index 1 of the main tuple
         // Within that: index 1 is props (P_basic), index 2 is payload
+        // Headers are at index 3 of P_basic record
         use properties <- decode.subfield([1, 1], payload_properties_decoder)
         use payload <- decode.subfield([1, 2], decode.string)
-        decode.success(Payload(payload, properties))
+        use raw_headers <- decode.subfield([1, 1, 3], decode.dynamic)
+        let headers = parse_amqp_headers(raw_headers)
+        decode.success(Payload(payload, properties, headers))
       }
       // Decode both parts and combine
       let assert Ok(basic_deliver) =
@@ -394,7 +404,7 @@ fn do_consume(channel, fun) -> Nil {
   // Call the callback - let the callback handle acknowledgement
   fun(payload, basic_deliver)
   // Continue consuming
-  do_consume(channel, fun)
+  do_consume(fun)
 }
 
 @external(erlang, "carotte_ffi", "ack")

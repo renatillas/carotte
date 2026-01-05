@@ -4,6 +4,7 @@ import carotte/exchange
 import carotte/publisher
 import carotte/queue
 import gleam/erlang/process
+import gleam/list
 import gleeunit
 
 pub fn main() {
@@ -341,4 +342,67 @@ pub fn auth_failure_test() {
     == carotte.AuthFailure(
       "ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.",
     )
+}
+
+pub fn receive_headers_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = channel.open_channel(client)
+  let assert Ok(_) =
+    exchange.declare(exchange.new("headers_test_exchange"), channel)
+  // Delete the queue first to ensure it's clean
+  let _ = queue.delete(channel, "headers_test_queue", False, False)
+  let assert Ok(_) = queue.declare(queue.new("headers_test_queue"), channel)
+  let assert Ok(_) =
+    queue.bind(
+      channel: channel,
+      queue: "headers_test_queue",
+      exchange: "headers_test_exchange",
+      routing_key: "",
+    )
+
+  let headers_subject = process.new_subject()
+
+  let assert Ok(_) =
+    queue.subscribe(
+      channel: channel,
+      queue: "headers_test_queue",
+      callback: fn(payload, _) {
+        let headers = publisher.headers_to_list(payload.headers)
+        process.send(headers_subject, headers)
+        Nil
+      },
+    )
+  process.sleep(500)
+
+  // Publish message with headers
+  let headers =
+    publisher.headers_from_list([
+      #("string_key", publisher.StringHeader("hello")),
+      #("int_key", publisher.IntHeader(42)),
+      #("bool_key", publisher.BoolHeader(True)),
+    ])
+
+  let assert Ok(_) =
+    publisher.publish(
+      channel: channel,
+      exchange: "headers_test_exchange",
+      routing_key: "",
+      payload: "test payload",
+      options: [publisher.Headers(headers)],
+    )
+  process.sleep(500)
+
+  let assert Ok(received_headers) = process.receive(headers_subject, 2000)
+
+  // Verify headers were received correctly (order may vary)
+  assert list.length(received_headers) == 3
+
+  let assert Ok(#(_, publisher.StringHeader("hello"))) =
+    list.find(received_headers, fn(h) { h.0 == "string_key" })
+
+  let assert Ok(#(_, publisher.IntHeader(42))) =
+    list.find(received_headers, fn(h) { h.0 == "int_key" })
+
+  let assert Ok(#(_, publisher.BoolHeader(True))) =
+    list.find(received_headers, fn(h) { h.0 == "bool_key" })
 }
