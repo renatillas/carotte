@@ -7,12 +7,13 @@ A type-safe RabbitMQ client for Gleam that provides a clean, idiomatic interface
 
 ## Features
 
-- 🔒 **Type-safe API** - Leverage Gleam's type system for safe message handling
-- 🚀 **High Performance** - Built on top of the battle-tested `amqp_client` Erlang library  
-- 🎯 **Idiomatic Gleam** - Clean, functional API that feels natural in Gleam
-- 📦 **Complete Feature Set** - Support for exchanges, queues, publishing, consuming, and more
-- ⚡ **Async Operations** - Non-blocking operations with `_async` variants
-- 🔄 **Flexible Message Acknowledgment** - Manual acknowledgment support for reliable message processing
+- **Type-safe API** - Leverage Gleam's type system for safe message handling
+- **High Performance** - Built on top of the battle-tested `amqp_client` Erlang library
+- **Idiomatic Gleam** - Clean, functional API that feels natural in Gleam
+- **Complete Feature Set** - Support for exchanges, queues, publishing, consuming, and more
+- **Async Operations** - Non-blocking operations with `_async` variants
+- **Flexible Message Acknowledgment** - Manual acknowledgment support for reliable message processing
+- **Full Headers Support** - Send and receive message headers with type-safe accessors
 
 ## Installation
 
@@ -170,11 +171,23 @@ queue.subscribe(
   callback: fn(payload, deliver) {
     // Process the message
     io.println("Processing: " <> payload.payload)
-    
+
     // Access delivery metadata
     io.println("Exchange: " <> deliver.exchange)
     io.println("Routing key: " <> deliver.routing_key)
-    
+
+    // Access message headers
+    let headers = publisher.headers_to_list(payload.headers)
+    list.each(headers, fn(header) {
+      case header {
+        #(name, publisher.StringHeader(value)) ->
+          io.println("Header " <> name <> ": " <> value)
+        #(name, publisher.IntHeader(value)) ->
+          io.println("Header " <> name <> ": " <> int.to_string(value))
+        _ -> Nil
+      }
+    })
+
     // Message is automatically acknowledged on success
   }
 )
@@ -190,6 +203,72 @@ let assert Ok(_) = queue.ack_single(ch, deliver.delivery_tag)
 
 // Acknowledge multiple messages
 let assert Ok(_) = queue.ack(ch, deliver.delivery_tag, True)
+```
+
+### Message Headers
+
+Carotte supports reading and writing message headers. Headers can contain various types of values:
+
+```gleam
+// Available header types
+publisher.BoolHeader(True)
+publisher.IntHeader(42)
+publisher.FloatHeader(3.14)
+publisher.StringHeader("hello")
+publisher.ListHeader([publisher.IntHeader(1), publisher.IntHeader(2)])
+```
+
+**Sending headers:**
+
+```gleam
+publisher.publish(
+  channel: ch,
+  exchange: "my_exchange",
+  routing_key: "my_key",
+  payload: "Hello!",
+  options: [
+    publisher.Headers(
+      publisher.headers_from_list([
+        #("user_id", publisher.StringHeader("123")),
+        #("priority", publisher.IntHeader(1)),
+      ])
+    ),
+  ],
+)
+```
+
+**Reading headers from received messages:**
+
+```gleam
+queue.subscribe(
+  channel: ch,
+  queue: "my_queue",
+  callback: fn(payload, _deliver) {
+    // Convert headers to a list of name-value pairs
+    let headers = publisher.headers_to_list(payload.headers)
+
+    // Find a specific header
+    let user_id = list.find(headers, fn(h) { h.0 == "user_id" })
+
+    case user_id {
+      Ok(#(_, publisher.StringHeader(id))) -> io.println("User: " <> id)
+      _ -> io.println("No user_id header found")
+    }
+  },
+)
+```
+
+**Working with empty headers:**
+
+```gleam
+// Create empty headers for pattern matching
+let empty = publisher.empty_headers()
+
+// Check if message has headers
+case payload.headers == publisher.empty_headers() {
+  True -> io.println("No headers")
+  False -> io.println("Has headers")
+}
 ```
 
 ## Error Handling

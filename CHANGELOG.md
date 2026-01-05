@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 3.0.0 - 2025-11-21
+## [4.0.0] - 2026-01-05
+
+### Added
+
+- Headers can now be read from received messages (previously only sending was supported)
+- New `headers` field in the `Payload` type to access message headers when consuming
+- `empty_headers()` function to create an empty HeaderList for pattern matching or when no headers are needed
+- `headers_to_list()` function to convert a HeaderList back to a list of name-value pairs
+
+### Changed
+
+- **BREAKING**: `Payload` type now has three fields: `payload`, `properties`, and `headers`
+
+## [3.0.0] - 2025-11-21
 
 - AutoAck(True) now does what it means, setting no_ack to True in the FFI layer, instead of being inverted.
 
@@ -102,7 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Virtual host configuration
 - Connection parameters (heartbeat, timeout, frame size)
 
-[Unreleased]: https://github.com/renatillas/carotte/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/renatillas/carotte/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/renatillas/carotte/compare/v3.0.0...v4.0.0
+[3.0.0]: https://github.com/renatillas/carotte/compare/v2.1.0...v3.0.0
+[2.1.0]: https://github.com/renatillas/carotte/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/renatillas/carotte/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/renatillas/carotte/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/renatillas/carotte/compare/v1.0.1...v1.0.2
