@@ -390,8 +390,8 @@ queue_declare(Channel, Queue, Passive, Durable, Exclusive, AutoDelete, Nowait) -
     of
       {true, ok} ->
         {ok, nil};
-      {_, {'queue.declare_ok', Queue, MessageCount, ConsumerCount}} ->
-        {ok, {declared_queue, Queue, MessageCount, ConsumerCount}};
+      {_, {'queue.declare_ok', ReturnedQueue, MessageCount, ConsumerCount}} ->
+        {ok, {declared_queue, ReturnedQueue, MessageCount, ConsumerCount}};
       {_, Error} ->
         convert_error(Error)
     end
