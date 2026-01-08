@@ -29,11 +29,11 @@ pub fn manual_ack_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_ack_queue",
       callback: fn(msg, deliver) {
@@ -88,12 +88,12 @@ pub fn ack_single_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // Subscribe and acknowledge each message individually
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_ack_single_queue",
       callback: fn(msg, deliver) {
@@ -174,13 +174,13 @@ pub fn ack_multiple_test() {
   let ack_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // Subscribe and ack only message 3 with multiple=True
   // This should acknowledge messages 1, 2, and 3
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_ack_multiple_queue",
       callback: fn(msg, meta) {
@@ -249,13 +249,13 @@ pub fn test_unacked_then_acked() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // First consumer - receive but DON'T ack
   let received = process.new_subject()
   let assert Ok(consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, _deliver) {
@@ -279,7 +279,7 @@ pub fn test_unacked_then_acked() {
   let received2 = process.new_subject()
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, deliver) {
@@ -317,14 +317,14 @@ pub fn test_redelivery_flag() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // First consumer - receive but don't ack
   let received = process.new_subject()
   let redelivery_flag = process.new_subject()
   let assert Ok(consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {
@@ -350,7 +350,7 @@ pub fn test_redelivery_flag() {
 
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {

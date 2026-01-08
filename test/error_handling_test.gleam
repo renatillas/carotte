@@ -74,12 +74,12 @@ pub fn delete_queue_in_use_test() {
   let assert Ok(_) = carotte.declare_queue(carotte.queue("queue_in_use"), ch)
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // Subscribe to the queue (puts it in use)
   let assert Ok(_consumer) =
     carotte.subscribe(
-      sup.data,
+      sup,
       channel: ch,
       queue: "queue_in_use",
       callback: fn(_payload, _meta) { Nil },

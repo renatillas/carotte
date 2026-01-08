@@ -1,7 +1,6 @@
 import carotte
 import gleam/erlang/process
 import gleam/list
-import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
 import gleam/string
 import gleeunit
@@ -288,11 +287,11 @@ pub fn subscribe_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   let assert Ok(_) =
     carotte.subscribe(
-      sup.data,
+      sup,
       channel: channel,
       queue: "consume_queue",
       callback: fn(payload, _) {
@@ -359,11 +358,11 @@ pub fn unsubscribe_test() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   let assert Ok(consumer) =
     carotte.subscribe(
-      sup.data,
+      sup,
       channel: channel,
       queue: "unsubscribe_queue",
       callback: fn(_, _) { Nil },
@@ -408,11 +407,11 @@ pub fn receive_headers_test() {
   let headers_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   let assert Ok(_) =
     carotte.subscribe(
-      sup.data,
+      sup,
       channel: channel,
       queue: "headers_test_queue",
       callback: fn(payload, _) {
@@ -500,8 +499,7 @@ pub fn supervised_consumer_integration_test() {
     process.new_name("test_consumers")
 
   // 4. Create the child specification using the supervised API
-  let consumer_supervisor_spec =
-    carotte.consumer_supervised(consumers_name, intensity: 5, period: 10)
+  let consumer_supervisor_spec = carotte.consumer_supervised(consumers_name)
 
   // 5. Start a static supervisor with the consumer supervisor as a child
   let assert Ok(_supervisor) =
@@ -520,7 +518,7 @@ pub fn supervised_consumer_integration_test() {
   // 8. Subscribe to the queue using the supervised consumer supervisor
   let assert Ok(consumer) =
     carotte.subscribe(
-      factory_supervisor.get_by_name(consumers_name),
+      carotte.get_consumer_supervisor(consumers_name),
       channel:,
       queue: "supervised_test_queue",
       callback: fn(payload, _deliver) {
@@ -592,7 +590,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
 
   // 3. Create a single consumer supervisor (factory supervisor)
   // This supervisor will manage multiple consumer children dynamically
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // 4. Set up subjects to receive messages from each consumer
   let subject1 = process.new_subject()
@@ -600,25 +598,15 @@ pub fn factory_supervisor_multiple_consumers_test() {
 
   // 5. Dynamically add first consumer to queue 1
   let assert Ok(consumer1) =
-    carotte.subscribe(
-      sup.data,
-      channel:,
-      queue: queue1,
-      callback: fn(payload, _) {
-        process.send(subject1, "q1:" <> payload.payload)
-      },
-    )
+    carotte.subscribe(sup, channel:, queue: queue1, callback: fn(payload, _) {
+      process.send(subject1, "q1:" <> payload.payload)
+    })
 
   // 6. Dynamically add second consumer to queue 2
   let assert Ok(consumer2) =
-    carotte.subscribe(
-      sup.data,
-      channel:,
-      queue: queue2,
-      callback: fn(payload, _) {
-        process.send(subject2, "q2:" <> payload.payload)
-      },
-    )
+    carotte.subscribe(sup, channel:, queue: queue2, callback: fn(payload, _) {
+      process.send(subject2, "q2:" <> payload.payload)
+    })
 
   // Give consumers time to start
   process.sleep(200)
@@ -665,14 +653,9 @@ pub fn factory_supervisor_multiple_consumers_test() {
   // 12. Add a third consumer to queue 1 (demonstrating dynamic addition)
   let subject3 = process.new_subject()
   let assert Ok(consumer3) =
-    carotte.subscribe(
-      sup.data,
-      channel:,
-      queue: queue1,
-      callback: fn(payload, _) {
-        process.send(subject3, "q1_new:" <> payload.payload)
-      },
-    )
+    carotte.subscribe(sup, channel:, queue: queue1, callback: fn(payload, _) {
+      process.send(subject3, "q1_new:" <> payload.payload)
+    })
   process.sleep(100)
 
   // 13. Publish to queue 1 again - new consumer should receive it
@@ -708,7 +691,7 @@ pub fn factory_supervisor_manual_ack_test() {
   let assert Ok(_) = carotte.purge_queue(channel:, queue:)
 
   // 3. Start factory supervisor
-  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+  let assert Ok(sup) = carotte.consumer_start()
 
   // 4. Set up subjects
   let received = process.new_subject()
@@ -716,7 +699,7 @@ pub fn factory_supervisor_manual_ack_test() {
   // 5. Subscribe with manual ack
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup.data,
+      sup,
       channel:,
       queue:,
       options: [carotte.AutoAck(False)],
