@@ -164,7 +164,7 @@
 //// import gleam/otp/static_supervisor
 ////
 //// let consumers_name = process.new_name("consumers")
-//// let spec = carotte.consumer_supervised(consumers_name, intensity: 3, period: 5)
+//// let spec = carotte.consumer_supervised(consumers_name)
 ////
 //// static_supervisor.new(static_supervisor.OneForOne)
 //// |> static_supervisor.add(spec)
@@ -1271,12 +1271,8 @@ pub type ConsumerSupervisorMessage =
 /// function directly.
 ///
 /// The supervisor will be linked to the calling process.
-pub fn consumer_start(
-  intensity intensity: Int,
-  period period: Int,
-) -> Result(ConsumerSupervisor, actor.StartError) {
+pub fn consumer_start() -> Result(ConsumerSupervisor, actor.StartError) {
   factory_supervisor.worker_child(start_consumer_actor)
-  |> factory_supervisor.restart_tolerance(intensity:, period:)
   |> factory_supervisor.start
   |> result.map(fn(started) { ConsumerSupervisor(supervisor: started.data) })
 }
@@ -1290,10 +1286,6 @@ pub fn consumer_start(
 /// You must provide a name so that other parts of your application can
 /// find the supervisor to subscribe consumers.
 ///
-/// The `intensity` and `period` parameters control restart behavior:
-/// - `intensity`: Maximum number of restarts allowed within the period
-/// - `period`: Time window in seconds for counting restarts
-///
 /// ## Example
 ///
 /// ```gleam
@@ -1305,7 +1297,7 @@ pub fn consumer_start(
 ///   let consumers_name = process.new_name("consumers")
 ///
 ///   // Create the child specification (max 5 restarts in 10 seconds)
-///   let consumer_spec = carotte.consumer_supervised(consumers_name, intensity: 5, period: 10)
+///   let consumer_spec = carotte.consumer_supervised(consumers_name)
 ///
 ///   // Add to your supervision tree
 ///   static_supervisor.new(static_supervisor.OneForOne)
@@ -1319,13 +1311,10 @@ pub fn consumer_start(
 /// ```
 pub fn consumer_supervised(
   name: process.Name(ConsumerSupervisorMessage),
-  intensity intensity: Int,
-  period period: Int,
 ) -> supervision.ChildSpecification(
   factory_supervisor.Supervisor(ConsumerConfig, Consumer),
 ) {
   factory_supervisor.worker_child(start_consumer_actor)
-  |> factory_supervisor.restart_tolerance(intensity:, period:)
   |> factory_supervisor.named(name)
   |> factory_supervisor.supervised
 }
