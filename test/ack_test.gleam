@@ -1,27 +1,24 @@
 import carotte
-import carotte/channel
-import carotte/exchange
-import carotte/publisher
-import carotte/queue
 import gleam/erlang/process
 
 pub fn manual_ack_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
-  let assert Ok(ch) = channel.open_channel(client)
-  let test_queue = queue.new("test_ack_queue")
-  let assert Ok(_) = queue.declare(test_queue, ch)
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_ack_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
-  let assert Ok(_) = queue.purge(ch, "test_ack_queue")
-  let assert Ok(_) = exchange.declare(exchange.new("test_ack_exchange"), ch)
+  let assert Ok(_) = carotte.purge_queue(channel: ch, queue: "test_ack_queue")
+  let assert Ok(_) =
+    carotte.declare_exchange(carotte.exchange("test_ack_exchange"), ch)
   let assert Ok(Nil) =
-    queue.bind(
+    carotte.bind_queue(
       channel: ch,
       queue: "test_ack_queue",
       exchange: "test_ack_exchange",
       routing_key: "",
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_exchange",
       routing_key: "",
@@ -31,17 +28,21 @@ pub fn manual_ack_test() {
 
   let message_subject = process.new_subject()
 
-  let assert Ok(_consumer_tag) =
-    queue.subscribe_with_options(
+  // Start the supervisor
+  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_ack_queue",
       callback: fn(msg, deliver) {
         process.send(message_subject, msg.payload)
         // Acknowledge the message
-        let assert Ok(Nil) = queue.ack(ch, deliver.delivery_tag, False)
+        let assert Ok(Nil) = carotte.ack(ch, deliver.delivery_tag, False)
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Verify message is received and processed
@@ -50,15 +51,16 @@ pub fn manual_ack_test() {
 
 pub fn ack_single_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
-  let assert Ok(ch) = channel.open_channel(client)
-  let test_queue = queue.new("test_ack_single_queue")
-  let assert Ok(_) = queue.declare(test_queue, ch)
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_ack_single_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
-  let assert Ok(_) = queue.purge(ch, "test_ack_single_queue")
   let assert Ok(_) =
-    exchange.declare(exchange.new("test_ack_single_exchange"), ch)
+    carotte.purge_queue(channel: ch, queue: "test_ack_single_queue")
   let assert Ok(_) =
-    queue.bind(
+    carotte.declare_exchange(carotte.exchange("test_ack_single_exchange"), ch)
+  let assert Ok(_) =
+    carotte.bind_queue(
       channel: ch,
       queue: "test_ack_single_queue",
       exchange: "test_ack_single_exchange",
@@ -67,7 +69,7 @@ pub fn ack_single_test() {
 
   // Publish two messages
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_single_exchange",
       routing_key: "",
@@ -75,7 +77,7 @@ pub fn ack_single_test() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_single_exchange",
       routing_key: "",
@@ -85,18 +87,22 @@ pub fn ack_single_test() {
 
   let message_subject = process.new_subject()
 
+  // Start the supervisor
+  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+
   // Subscribe and acknowledge each message individually
-  let assert Ok(_consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_ack_single_queue",
       callback: fn(msg, deliver) {
         process.send(message_subject, msg.payload)
         // Use ack_single to acknowledge each message individually
-        let assert Ok(Nil) = queue.ack_single(ch, deliver.delivery_tag)
+        let assert Ok(Nil) = carotte.ack_single(ch, deliver.delivery_tag)
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Verify both messages are received
@@ -106,15 +112,16 @@ pub fn ack_single_test() {
 
 pub fn ack_multiple_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
-  let assert Ok(ch) = channel.open_channel(client)
-  let test_queue = queue.new("test_ack_multiple_queue")
-  let assert Ok(_) = queue.declare(test_queue, ch)
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_ack_multiple_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
-  let assert Ok(_) = queue.purge(ch, "test_ack_multiple_queue")
   let assert Ok(_) =
-    exchange.declare(exchange.new("test_ack_multiple_exchange"), ch)
+    carotte.purge_queue(channel: ch, queue: "test_ack_multiple_queue")
   let assert Ok(_) =
-    queue.bind(
+    carotte.declare_exchange(carotte.exchange("test_ack_multiple_exchange"), ch)
+  let assert Ok(_) =
+    carotte.bind_queue(
       channel: ch,
       queue: "test_ack_multiple_queue",
       exchange: "test_ack_multiple_exchange",
@@ -123,7 +130,7 @@ pub fn ack_multiple_test() {
 
   // Publish 5 messages
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
@@ -131,7 +138,7 @@ pub fn ack_multiple_test() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
@@ -139,7 +146,7 @@ pub fn ack_multiple_test() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
@@ -147,7 +154,7 @@ pub fn ack_multiple_test() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
@@ -155,7 +162,7 @@ pub fn ack_multiple_test() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
@@ -166,10 +173,14 @@ pub fn ack_multiple_test() {
   let message_subject = process.new_subject()
   let ack_subject = process.new_subject()
 
+  // Start the supervisor
+  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+
   // Subscribe and ack only message 3 with multiple=True
   // This should acknowledge messages 1, 2, and 3
-  let assert Ok(_consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_ack_multiple_queue",
       callback: fn(msg, meta) {
@@ -177,19 +188,19 @@ pub fn ack_multiple_test() {
         case msg.payload {
           "message 3" -> {
             // Acknowledge all messages up to and including message 3
-            let assert Ok(Nil) = queue.ack(ch, meta.delivery_tag, True)
+            let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, True)
             process.send(ack_subject, "acked 1-3")
             Nil
           }
           "message 4" | "message 5" -> {
             // Acknowledge remaining messages individually
-            let assert Ok(Nil) = queue.ack(ch, meta.delivery_tag, False)
+            let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
             Nil
           }
           _ -> Nil
         }
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Verify all messages are received
@@ -204,15 +215,16 @@ pub fn ack_multiple_test() {
 
 pub fn test_unacked_then_acked() {
   let assert Ok(client) = carotte.start(carotte.default_client())
-  let assert Ok(ch) = channel.open_channel(client)
-  let test_queue = queue.new("test_unacked_then_acked_queue")
-  let assert Ok(_) = queue.declare(test_queue, ch)
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_unacked_then_acked_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
-  let assert Ok(_) = queue.purge(ch, "test_unacked_then_acked_queue")
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_unacked_then_acked_queue")
 
   // Publish 3 messages directly to queue
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
@@ -220,7 +232,7 @@ pub fn test_unacked_then_acked() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
@@ -228,7 +240,7 @@ pub fn test_unacked_then_acked() {
       options: [],
     )
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
@@ -236,10 +248,14 @@ pub fn test_unacked_then_acked() {
       options: [],
     )
 
+  // Start the supervisor
+  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+
   // First consumer - receive but DON'T ack
   let received = process.new_subject()
-  let assert Ok(consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, _deliver) {
@@ -247,7 +263,7 @@ pub fn test_unacked_then_acked() {
         // NO ACK HERE - messages should remain unacknowledged
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Receive all messages without acking
@@ -256,22 +272,23 @@ pub fn test_unacked_then_acked() {
   let assert Ok("msg3") = process.receive(received, 1000)
 
   // Unsubscribe to release unacked messages back to queue
-  let assert Ok(Nil) = queue.unsubscribe(ch, consumer_tag)
+  let assert Ok(Nil) = carotte.unsubscribe(consumer)
   process.sleep(100)
 
   // Second consumer - now ACK the messages
   let received2 = process.new_subject()
-  let assert Ok(_consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, deliver) {
         process.send(received2, msg.payload)
         // This time ACK the messages
-        let assert Ok(Nil) = queue.ack(ch, deliver.delivery_tag, False)
+        let assert Ok(Nil) = carotte.ack(ch, deliver.delivery_tag, False)
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Messages should be redelivered and then acknowledged
@@ -282,15 +299,16 @@ pub fn test_unacked_then_acked() {
 
 pub fn test_redelivery_flag() {
   let assert Ok(client) = carotte.start(carotte.default_client())
-  let assert Ok(ch) = channel.open_channel(client)
-  let test_queue = queue.new("test_redelivery_flag_queue")
-  let assert Ok(_) = queue.declare(test_queue, ch)
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_redelivery_flag_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
-  let assert Ok(_) = queue.purge(ch, "test_redelivery_flag_queue")
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_redelivery_flag_queue")
 
   // Publish a message
   let assert Ok(Nil) =
-    publisher.publish(
+    carotte.publish(
       channel: ch,
       exchange: "",
       routing_key: "test_redelivery_flag_queue",
@@ -298,11 +316,15 @@ pub fn test_redelivery_flag() {
       options: [],
     )
 
+  // Start the supervisor
+  let assert Ok(sup) = carotte.consumer_start(intensity: 1, period: 1)
+
   // First consumer - receive but don't ack
   let received = process.new_subject()
   let redelivery_flag = process.new_subject()
-  let assert Ok(consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {
@@ -311,7 +333,7 @@ pub fn test_redelivery_flag() {
         // DON'T ACK - simulate consumer issue
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Receive the message and check it's not marked as redelivered
@@ -319,25 +341,26 @@ pub fn test_redelivery_flag() {
   let assert Ok(False) = process.receive(redelivery_flag, 1000)
 
   // Cancel consumer - message should be requeued
-  let assert Ok(Nil) = queue.unsubscribe(ch, consumer_tag)
+  let assert Ok(Nil) = carotte.unsubscribe(consumer)
   process.sleep(100)
 
   // Subscribe again - should get redelivered message
   let redelivered = process.new_subject()
   let redelivery_flag2 = process.new_subject()
 
-  let assert Ok(_consumer_tag) =
-    queue.subscribe_with_options(
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      sup.data,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {
         process.send(redelivered, msg.payload)
         process.send(redelivery_flag2, meta.redelivered)
         // Acknowledge this time
-        let assert Ok(Nil) = queue.ack(ch, meta.delivery_tag, False)
+        let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
         Nil
       },
-      options: [queue.AutoAck(False)],
+      options: [carotte.AutoAck(False)],
     )
 
   // Receive the redelivered message and verify redelivered flag is True

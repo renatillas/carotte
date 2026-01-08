@@ -3,207 +3,243 @@
 -export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
-         header_value_to_header_tuple/1, parse_amqp_headers/1]).
+         header_value_to_header_tuple/1, parse_amqp_headers/1, is_process_alive/1]).
 
--record(client, {pid}).
--record(channel, {pid}).
+%% =============================================================================
+%% CONNECTION ERROR CONVERTER
+%% =============================================================================
 
-% Convert various AMQP errors to Gleam-compatible format
-convert_error({auth_failure, Message}) when is_list(Message) ->
-  {error, {auth_failure, list_to_binary(Message)}};
-convert_error({auth_failure, Message}) when is_binary(Message) ->
-  {error, {auth_failure, Message}};
-convert_error(auth_failure) ->
-  {error, {auth_failure, <<"Authentication failed">>}};
-convert_error(blocked) ->
-  {error, blocked};
-convert_error(closing) ->
-  {error, closed};
-convert_error(closed) ->
-  {error, closed};
-convert_error(noproc) ->
-  {error, process_not_found};
-convert_error({noproc, _}) ->
-  {error, process_not_found};
-convert_error(already_registered) ->
-  {error, {already_registered, <<"Process name already registered">>}};
-convert_error({already_registered, Message}) ->
-  {error, {already_registered, Message}};
-% Handle double-wrapped shutdown errors (from gen_server calls)
-convert_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
-  convert_error({shutdown, {server_initiated_close, Code, Message}});
-% Handle shutdown errors with server initiated close using AMQP reply codes
-convert_error({shutdown, {server_initiated_close, 312, Message}}) when is_list(Message) ->
-  {error, {no_route, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 312, Message}})
-  when is_binary(Message) ->
-  {error, {no_route, Message}};
-convert_error({shutdown, {server_initiated_close, 320, Message}}) when is_list(Message) ->
-  {error, {connection_timeout, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 320, Message}})
-  when is_binary(Message) ->
-  {error, {connection_timeout, Message}};
-convert_error({shutdown, {server_initiated_close, 403, Message}}) when is_list(Message) ->
-  {error, {access_refused, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 403, Message}})
-  when is_binary(Message) ->
-  {error, {access_refused, Message}};
-convert_error({shutdown, {server_initiated_close, 404, Message}}) when is_list(Message) ->
-  {error, {not_found, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 404, Message}})
-  when is_binary(Message) ->
-  {error, {not_found, Message}};
-convert_error({shutdown, {server_initiated_close, 405, Message}}) when is_list(Message) ->
-  {error, {resource_locked, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 405, Message}})
-  when is_binary(Message) ->
-  {error, {resource_locked, Message}};
-convert_error({shutdown, {server_initiated_close, 406, Message}}) when is_list(Message) ->
-  {error, {precondition_failed, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 406, Message}})
-  when is_binary(Message) ->
-  {error, {precondition_failed, Message}};
-convert_error({shutdown, {server_initiated_close, 501, Message}}) when is_list(Message) ->
-  {error, {frame_error, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 501, Message}})
-  when is_binary(Message) ->
-  {error, {frame_error, Message}};
-convert_error({shutdown, {server_initiated_close, 502, Message}}) when is_list(Message) ->
-  {error, {command_invalid, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 502, Message}})
-  when is_binary(Message) ->
-  {error, {command_invalid, Message}};
-convert_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
-  {error, {channel_closed, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 503, Message}})
-  when is_binary(Message) ->
-  {error, {channel_closed, Message}};
-convert_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
-  {error, {channel_closed, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 504, Message}})
-  when is_binary(Message) ->
-  {error, {channel_closed, Message}};
-convert_error({shutdown, {server_initiated_close, 505, Message}}) when is_list(Message) ->
-  {error, {unexpected_frame, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 505, Message}})
-  when is_binary(Message) ->
-  {error, {unexpected_frame, Message}};
-convert_error({shutdown, {server_initiated_close, 530, Message}}) when is_list(Message) ->
-  {error, {not_allowed, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 530, Message}})
-  when is_binary(Message) ->
-  {error, {not_allowed, Message}};
-convert_error({shutdown, {server_initiated_close, 540, Message}}) when is_list(Message) ->
-  {error, {not_implemented, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 540, Message}})
-  when is_binary(Message) ->
-  {error, {not_implemented, Message}};
-convert_error({shutdown, {server_initiated_close, 541, Message}}) when is_list(Message) ->
-  {error, {internal_error, list_to_binary(Message)}};
-convert_error({shutdown, {server_initiated_close, 541, Message}})
-  when is_binary(Message) ->
-  {error, {internal_error, Message}};
-% Handle other shutdown errors
-convert_error({shutdown, Reason}) ->
-  convert_error(Reason);
-convert_error({'EXIT', Reason}) ->
-  convert_error(Reason);
-convert_error({error, Reason}) ->
-  convert_error(Reason);
-% Handle AMQP specific errors
-convert_error({amqp_error, not_found, Message}) when is_list(Message) ->
-  {error, {not_found, list_to_binary(Message)}};
-convert_error({amqp_error, not_found, Message}) when is_binary(Message) ->
-  {error, {not_found, Message}};
-convert_error({amqp_error, access_refused, Message}) when is_list(Message) ->
-  {error, {access_refused, list_to_binary(Message)}};
-convert_error({amqp_error, access_refused, Message}) when is_binary(Message) ->
-  {error, {access_refused, Message}};
-convert_error({amqp_error, precondition_failed, Message}) when is_list(Message) ->
-  {error, {precondition_failed, list_to_binary(Message)}};
-convert_error({amqp_error, precondition_failed, Message}) when is_binary(Message) ->
-  {error, {precondition_failed, Message}};
-convert_error({amqp_error, resource_locked, Message}) when is_list(Message) ->
-  {error, {resource_locked, list_to_binary(Message)}};
-convert_error({amqp_error, resource_locked, Message}) when is_binary(Message) ->
-  {error, {resource_locked, Message}};
-% Map common connection and network errors
-convert_error(econnrefused) ->
+convert_connection_error({auth_failure, Message}) when is_list(Message) ->
+  {error, {connection_auth_failure, list_to_binary(Message)}};
+convert_connection_error({auth_failure, Message}) when is_binary(Message) ->
+  {error, {connection_auth_failure, Message}};
+convert_connection_error(auth_failure) ->
+  {error, {connection_auth_failure, <<"Authentication failed">>}};
+convert_connection_error(blocked) ->
+  {error, connection_blocked};
+convert_connection_error(closing) ->
+  {error, connection_closed};
+convert_connection_error(closed) ->
+  {error, connection_closed};
+convert_connection_error(econnrefused) ->
   {error, {connection_refused, <<"Connection refused by server">>}};
-convert_error(etimedout) ->
+convert_connection_error(etimedout) ->
   {error, {connection_timeout, <<"Connection timed out">>}};
-convert_error(timeout) ->
+convert_connection_error(timeout) ->
   {error, {connection_timeout, <<"Operation timed out">>}};
-convert_error(channel_closed) ->
-  {error, {channel_closed, <<"Channel closed">>}};
-convert_error(connection_closed) ->
-  {error, {closed, <<"Connection closed">>}};
-convert_error({channel_closed, Reason}) when is_list(Reason) ->
-  {error, {channel_closed, list_to_binary(Reason)}};
-convert_error({channel_closed, Reason}) when is_binary(Reason) ->
-  {error, {channel_closed, Reason}};
-convert_error({connection_closed, Reason}) when is_list(Reason) ->
-  {error, {closed, list_to_binary(Reason)}};
-convert_error({connection_closed, Reason}) when is_binary(Reason) ->
-  {error, {closed, Reason}};
-% Handle invalid path errors
-convert_error({invalid_path, Path}) when is_list(Path) ->
-  {error, {invalid_path, list_to_binary(Path)}};
-convert_error({invalid_path, Path}) when is_binary(Path) ->
-  {error, {invalid_path, Path}};
-% Handle command invalid errors
-convert_error(command_invalid) ->
-  {error, {command_invalid, <<"Invalid command">>}};
-convert_error({command_invalid, Reason}) when is_list(Reason) ->
-  {error, {command_invalid, list_to_binary(Reason)}};
-convert_error({command_invalid, Reason}) when is_binary(Reason) ->
-  {error, {command_invalid, Reason}};
-% Handle frame errors
-convert_error(frame_error) ->
-  {error, {frame_error, <<"Frame error">>}};
-convert_error({frame_error, Reason}) when is_list(Reason) ->
-  {error, {frame_error, list_to_binary(Reason)}};
-convert_error({frame_error, Reason}) when is_binary(Reason) ->
-  {error, {frame_error, Reason}};
-% Handle internal errors
-convert_error(internal_error) ->
-  {error, {internal_error, <<"Internal server error">>}};
-convert_error({internal_error, Reason}) when is_list(Reason) ->
-  {error, {internal_error, list_to_binary(Reason)}};
-convert_error({internal_error, Reason}) when is_binary(Reason) ->
-  {error, {internal_error, Reason}};
-% Generic error handling for tuples - try to map atom to specific error
-convert_error({connection_refused, Message}) when is_list(Message) ->
+convert_connection_error({connection_refused, Message}) when is_list(Message) ->
   {error, {connection_refused, list_to_binary(Message)}};
-convert_error({connection_refused, Message}) when is_binary(Message) ->
+convert_connection_error({connection_refused, Message}) when is_binary(Message) ->
   {error, {connection_refused, Message}};
-convert_error({not_allowed, Message}) when is_list(Message) ->
-  {error, {not_allowed, list_to_binary(Message)}};
-convert_error({not_allowed, Message}) when is_binary(Message) ->
-  {error, {not_allowed, Message}};
-convert_error({not_implemented, Message}) when is_list(Message) ->
-  {error, {not_implemented, list_to_binary(Message)}};
-convert_error({not_implemented, Message}) when is_binary(Message) ->
-  {error, {not_implemented, Message}};
-convert_error({no_route, Message}) when is_list(Message) ->
-  {error, {no_route, list_to_binary(Message)}};
-convert_error({no_route, Message}) when is_binary(Message) ->
-  {error, {no_route, Message}};
-convert_error({unexpected_frame, Message}) when is_list(Message) ->
-  {error, {unexpected_frame, list_to_binary(Message)}};
-convert_error({unexpected_frame, Message}) when is_binary(Message) ->
-  {error, {unexpected_frame, Message}};
-% Generic error handling for other tuples
-convert_error({ErrorType, Message}) when is_atom(ErrorType), is_list(Message) ->
-  {error, {ErrorType, list_to_binary(Message)}};
-convert_error({ErrorType, Message}) when is_atom(ErrorType), is_binary(Message) ->
-  {error, {ErrorType, Message}};
-% Fallback for unknown atom errors
-convert_error(Error) when is_atom(Error) ->
-  {error, Error};
-% Fallback for completely unknown errors
-convert_error(Error) ->
-  {error, {unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+convert_connection_error({shutdown, Reason}) ->
+  convert_connection_error(Reason);
+convert_connection_error({'EXIT', Reason}) ->
+  convert_connection_error(Reason);
+convert_connection_error({error, Reason}) ->
+  convert_connection_error(Reason);
+convert_connection_error(Error) ->
+  {error, {connection_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+
+%% =============================================================================
+%% CHANNEL ERROR CONVERTER
+%% =============================================================================
+
+convert_channel_error(noproc) ->
+  {error, channel_process_not_found};
+convert_channel_error({noproc, _}) ->
+  {error, channel_process_not_found};
+convert_channel_error(closing) ->
+  {error, channel_connection_closed};
+convert_channel_error(closed) ->
+  {error, channel_connection_closed};
+convert_channel_error({channel_closed, Reason}) when is_list(Reason) ->
+  {error, {channel_closed, list_to_binary(Reason)}};
+convert_channel_error({channel_closed, Reason}) when is_binary(Reason) ->
+  {error, {channel_closed, Reason}};
+convert_channel_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
+  convert_channel_error({shutdown, {server_initiated_close, Code, Message}});
+convert_channel_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
+  {error, {channel_closed, list_to_binary(Message)}};
+convert_channel_error({shutdown, {server_initiated_close, 503, Message}}) when is_binary(Message) ->
+  {error, {channel_closed, Message}};
+convert_channel_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
+  {error, {channel_closed, list_to_binary(Message)}};
+convert_channel_error({shutdown, {server_initiated_close, 504, Message}}) when is_binary(Message) ->
+  {error, {channel_closed, Message}};
+convert_channel_error({shutdown, Reason}) ->
+  convert_channel_error(Reason);
+convert_channel_error({'EXIT', Reason}) ->
+  convert_channel_error(Reason);
+convert_channel_error({error, Reason}) ->
+  convert_channel_error(Reason);
+convert_channel_error(Error) ->
+  {error, {channel_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+
+%% =============================================================================
+%% EXCHANGE ERROR CONVERTER
+%% =============================================================================
+
+convert_exchange_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
+  convert_exchange_error({shutdown, {server_initiated_close, Code, Message}});
+convert_exchange_error({shutdown, {server_initiated_close, 404, Message}}) when is_list(Message) ->
+  {error, {exchange_not_found, list_to_binary(Message)}};
+convert_exchange_error({shutdown, {server_initiated_close, 404, Message}}) when is_binary(Message) ->
+  {error, {exchange_not_found, Message}};
+convert_exchange_error({shutdown, {server_initiated_close, 403, Message}}) when is_list(Message) ->
+  {error, {exchange_access_refused, list_to_binary(Message)}};
+convert_exchange_error({shutdown, {server_initiated_close, 403, Message}}) when is_binary(Message) ->
+  {error, {exchange_access_refused, Message}};
+convert_exchange_error({shutdown, {server_initiated_close, 406, Message}}) when is_list(Message) ->
+  {error, {exchange_precondition_failed, list_to_binary(Message)}};
+convert_exchange_error({shutdown, {server_initiated_close, 406, Message}}) when is_binary(Message) ->
+  {error, {exchange_precondition_failed, Message}};
+convert_exchange_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
+  {error, {exchange_channel_closed, list_to_binary(Message)}};
+convert_exchange_error({shutdown, {server_initiated_close, 503, Message}}) when is_binary(Message) ->
+  {error, {exchange_channel_closed, Message}};
+convert_exchange_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
+  {error, {exchange_channel_closed, list_to_binary(Message)}};
+convert_exchange_error({shutdown, {server_initiated_close, 504, Message}}) when is_binary(Message) ->
+  {error, {exchange_channel_closed, Message}};
+convert_exchange_error({amqp_error, not_found, Message}) when is_list(Message) ->
+  {error, {exchange_not_found, list_to_binary(Message)}};
+convert_exchange_error({amqp_error, not_found, Message}) when is_binary(Message) ->
+  {error, {exchange_not_found, Message}};
+convert_exchange_error({amqp_error, access_refused, Message}) when is_list(Message) ->
+  {error, {exchange_access_refused, list_to_binary(Message)}};
+convert_exchange_error({amqp_error, access_refused, Message}) when is_binary(Message) ->
+  {error, {exchange_access_refused, Message}};
+convert_exchange_error({amqp_error, precondition_failed, Message}) when is_list(Message) ->
+  {error, {exchange_precondition_failed, list_to_binary(Message)}};
+convert_exchange_error({amqp_error, precondition_failed, Message}) when is_binary(Message) ->
+  {error, {exchange_precondition_failed, Message}};
+convert_exchange_error({shutdown, Reason}) ->
+  convert_exchange_error(Reason);
+convert_exchange_error({'EXIT', Reason}) ->
+  convert_exchange_error(Reason);
+convert_exchange_error({error, Reason}) ->
+  convert_exchange_error(Reason);
+convert_exchange_error(Error) ->
+  {error, {exchange_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+
+%% =============================================================================
+%% QUEUE ERROR CONVERTER
+%% =============================================================================
+
+convert_queue_error(noproc) ->
+  {error, {queue_channel_closed, <<"Channel process not found">>}};
+convert_queue_error({noproc, _}) ->
+  {error, {queue_channel_closed, <<"Channel process not found">>}};
+convert_queue_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
+  convert_queue_error({shutdown, {server_initiated_close, Code, Message}});
+convert_queue_error({shutdown, {server_initiated_close, 404, Message}}) when is_list(Message) ->
+  {error, {queue_not_found, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 404, Message}}) when is_binary(Message) ->
+  {error, {queue_not_found, Message}};
+convert_queue_error({shutdown, {server_initiated_close, 403, Message}}) when is_list(Message) ->
+  {error, {queue_access_refused, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 403, Message}}) when is_binary(Message) ->
+  {error, {queue_access_refused, Message}};
+convert_queue_error({shutdown, {server_initiated_close, 405, Message}}) when is_list(Message) ->
+  {error, {queue_resource_locked, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 405, Message}}) when is_binary(Message) ->
+  {error, {queue_resource_locked, Message}};
+convert_queue_error({shutdown, {server_initiated_close, 406, Message}}) when is_list(Message) ->
+  {error, {queue_precondition_failed, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 406, Message}}) when is_binary(Message) ->
+  {error, {queue_precondition_failed, Message}};
+convert_queue_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
+  {error, {queue_channel_closed, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 503, Message}}) when is_binary(Message) ->
+  {error, {queue_channel_closed, Message}};
+convert_queue_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
+  {error, {queue_channel_closed, list_to_binary(Message)}};
+convert_queue_error({shutdown, {server_initiated_close, 504, Message}}) when is_binary(Message) ->
+  {error, {queue_channel_closed, Message}};
+convert_queue_error({amqp_error, not_found, Message}) when is_list(Message) ->
+  {error, {queue_not_found, list_to_binary(Message)}};
+convert_queue_error({amqp_error, not_found, Message}) when is_binary(Message) ->
+  {error, {queue_not_found, Message}};
+convert_queue_error({amqp_error, access_refused, Message}) when is_list(Message) ->
+  {error, {queue_access_refused, list_to_binary(Message)}};
+convert_queue_error({amqp_error, access_refused, Message}) when is_binary(Message) ->
+  {error, {queue_access_refused, Message}};
+convert_queue_error({amqp_error, precondition_failed, Message}) when is_list(Message) ->
+  {error, {queue_precondition_failed, list_to_binary(Message)}};
+convert_queue_error({amqp_error, precondition_failed, Message}) when is_binary(Message) ->
+  {error, {queue_precondition_failed, Message}};
+convert_queue_error({amqp_error, resource_locked, Message}) when is_list(Message) ->
+  {error, {queue_resource_locked, list_to_binary(Message)}};
+convert_queue_error({amqp_error, resource_locked, Message}) when is_binary(Message) ->
+  {error, {queue_resource_locked, Message}};
+convert_queue_error({shutdown, Reason}) ->
+  convert_queue_error(Reason);
+convert_queue_error({'EXIT', Reason}) ->
+  convert_queue_error(Reason);
+convert_queue_error({error, Reason}) ->
+  convert_queue_error(Reason);
+convert_queue_error(Error) ->
+  {error, {queue_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+
+%% =============================================================================
+%% PUBLISH ERROR CONVERTER
+%% =============================================================================
+
+convert_publish_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
+  convert_publish_error({shutdown, {server_initiated_close, Code, Message}});
+convert_publish_error({shutdown, {server_initiated_close, 312, Message}}) when is_list(Message) ->
+  {error, {publish_no_route, list_to_binary(Message)}};
+convert_publish_error({shutdown, {server_initiated_close, 312, Message}}) when is_binary(Message) ->
+  {error, {publish_no_route, Message}};
+convert_publish_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
+  {error, {publish_channel_closed, list_to_binary(Message)}};
+convert_publish_error({shutdown, {server_initiated_close, 503, Message}}) when is_binary(Message) ->
+  {error, {publish_channel_closed, Message}};
+convert_publish_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
+  {error, {publish_channel_closed, list_to_binary(Message)}};
+convert_publish_error({shutdown, {server_initiated_close, 504, Message}}) when is_binary(Message) ->
+  {error, {publish_channel_closed, Message}};
+convert_publish_error({no_route, Message}) when is_list(Message) ->
+  {error, {publish_no_route, list_to_binary(Message)}};
+convert_publish_error({no_route, Message}) when is_binary(Message) ->
+  {error, {publish_no_route, Message}};
+convert_publish_error({shutdown, Reason}) ->
+  convert_publish_error(Reason);
+convert_publish_error({'EXIT', Reason}) ->
+  convert_publish_error(Reason);
+convert_publish_error({error, Reason}) ->
+  convert_publish_error(Reason);
+convert_publish_error(Error) ->
+  {error, {publish_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
+
+%% =============================================================================
+%% CONSUME ERROR CONVERTER
+%% =============================================================================
+
+convert_consume_error(noproc) ->
+  {error, consume_process_not_found};
+convert_consume_error({noproc, _}) ->
+  {error, consume_process_not_found};
+convert_consume_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
+  convert_consume_error({shutdown, {server_initiated_close, Code, Message}});
+convert_consume_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
+  {error, {consume_channel_closed, list_to_binary(Message)}};
+convert_consume_error({shutdown, {server_initiated_close, 503, Message}}) when is_binary(Message) ->
+  {error, {consume_channel_closed, Message}};
+convert_consume_error({shutdown, {server_initiated_close, 504, Message}}) when is_list(Message) ->
+  {error, {consume_channel_closed, list_to_binary(Message)}};
+convert_consume_error({shutdown, {server_initiated_close, 504, Message}}) when is_binary(Message) ->
+  {error, {consume_channel_closed, Message}};
+convert_consume_error(unexpected_response) ->
+  {error, {consume_unknown_error, <<"Unexpected response from broker">>}};
+convert_consume_error({shutdown, Reason}) ->
+  convert_consume_error(Reason);
+convert_consume_error({'EXIT', Reason}) ->
+  convert_consume_error(Reason);
+convert_consume_error({error, Reason}) ->
+  convert_consume_error(Reason);
+convert_consume_error(Error) ->
+  {error, {consume_unknown_error, list_to_binary(io_lib:format("~p", [Error]))}}.
 
 -record(amqp_params_network,
         {username = <<"guest">>,
@@ -242,15 +278,15 @@ start(Username,
     {ok, Pid} ->
       {ok, Pid};
     {error, Error} ->
-      convert_error(Error)
+      convert_connection_error(Error)
   end.
 
-open_channel(Client) ->
-  case amqp_connection:open_channel(Client#client.pid) of
+open_channel({client, Pid, _Config}) ->
+  case amqp_connection:open_channel(Pid) of
     {ok, ChannelPid} ->
-      {ok, #channel{pid = ChannelPid}};
+      {ok, {channel, ChannelPid}};
     {error, Error} ->
-      convert_error(Error)
+      convert_channel_error(Error)
   end.
 
 -record('exchange.declare',
@@ -264,11 +300,11 @@ open_channel(Client) ->
          nowait = false,
          arguments = []}).
 
-exchange_declare(Channel,
+exchange_declare({channel, ChannelPid},
                  {exchange, Name, Type, Durable, AutoDelete, Internal, Nowait}) ->
   try
     Result =
-      amqp_channel:call(Channel#channel.pid,
+      amqp_channel:call(ChannelPid,
                         #'exchange.declare'{exchange = Name,
                                             type = atom_to_binary(Type),
                                             durable = Durable,
@@ -282,21 +318,21 @@ exchange_declare(Channel,
       {_, {'exchange.declare_ok'}} ->
         {ok, nil};
       {_, Error} ->
-        convert_error(Error)
+        convert_exchange_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_exchange_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_exchange_error(Reason)
   end.
 
 -record('exchange.delete', {ticket = 0, exchange, if_unused = false, nowait = false}).
 
-exchange_delete(Channel, Name, IfUnused, Nowait) ->
+exchange_delete({channel, ChannelPid}, Name, IfUnused, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'exchange.delete'{exchange = Name,
                                                if_unused = IfUnused,
                                                nowait = Nowait})}
@@ -306,22 +342,22 @@ exchange_delete(Channel, Name, IfUnused, Nowait) ->
       {_, {'exchange.delete_ok'}} ->
         {ok, nil};
       {_, Error} ->
-        convert_error(Error)
+        convert_exchange_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_exchange_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_exchange_error(Reason)
   end.
 
 -record('exchange.bind',
         {ticket = 0, destination, source, routing_key = <<"">>, nowait = false, arguments = []}).
 
-exchange_bind(Channel, Source, Destination, RoutingKey, Nowait) ->
+exchange_bind({channel, ChannelPid}, Source, Destination, RoutingKey, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'exchange.bind'{destination = Destination,
                                              source = Source,
                                              routing_key = RoutingKey,
@@ -332,22 +368,22 @@ exchange_bind(Channel, Source, Destination, RoutingKey, Nowait) ->
       {_, {'exchange.bind_ok'}} ->
         {ok, nil};
       {_, Error} ->
-        convert_error(Error)
+        convert_exchange_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_exchange_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_exchange_error(Reason)
   end.
 
 -record('exchange.unbind',
         {ticket = 0, destination, source, routing_key = <<"">>, nowait = false, arguments = []}).
 
-exchange_unbind(Channel, Source, Destination, RoutingKey, Nowait) ->
+exchange_unbind({channel, ChannelPid}, Source, Destination, RoutingKey, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'exchange.unbind'{destination = Destination,
                                                source = Source,
                                                routing_key = RoutingKey,
@@ -358,13 +394,13 @@ exchange_unbind(Channel, Source, Destination, RoutingKey, Nowait) ->
       {_, {'exchange.unbind_ok'}} ->
         {ok, nil};
       {_, Error} ->
-        convert_error(Error)
+        convert_exchange_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_exchange_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_exchange_error(Reason)
   end.
 
 -record('queue.declare',
@@ -377,10 +413,16 @@ exchange_unbind(Channel, Source, Destination, RoutingKey, Nowait) ->
          nowait = false,
          arguments = []}).
 
-queue_declare(Channel, Queue, Passive, Durable, Exclusive, AutoDelete, Nowait) ->
+queue_declare({channel, ChannelPid},
+              Queue,
+              Passive,
+              Durable,
+              Exclusive,
+              AutoDelete,
+              Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'queue.declare'{queue = Queue,
                                              passive = Passive,
                                              durable = Durable,
@@ -391,24 +433,24 @@ queue_declare(Channel, Queue, Passive, Durable, Exclusive, AutoDelete, Nowait) -
       {true, ok} ->
         {ok, nil};
       {_, {'queue.declare_ok', ReturnedQueue, MessageCount, ConsumerCount}} ->
-        {ok, {declared_queue, ReturnedQueue, MessageCount, ConsumerCount}};
+        {ok, {queue, ReturnedQueue, MessageCount, ConsumerCount}};
       {_, Error} ->
-        convert_error(Error)
+        convert_queue_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_queue_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_queue_error(Reason)
   end.
 
 -record('queue.delete',
         {ticket = 0, queue = <<"">>, if_unused = false, if_empty = false, nowait = false}).
 
-queue_delete(Channel, Queue, IfUnused, IfEmpty, Nowait) ->
+queue_delete({channel, ChannelPid}, Queue, IfUnused, IfEmpty, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'queue.delete'{queue = Queue,
                                             if_unused = IfUnused,
                                             if_empty = IfEmpty,
@@ -419,13 +461,13 @@ queue_delete(Channel, Queue, IfUnused, IfEmpty, Nowait) ->
       {_, {'queue.delete_ok', MessageCount}} ->
         {ok, MessageCount};
       {_, Error} ->
-        convert_error(Error)
+        convert_queue_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_queue_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_queue_error(Reason)
   end.
 
 -record('queue.bind',
@@ -436,10 +478,10 @@ queue_delete(Channel, Queue, IfUnused, IfEmpty, Nowait) ->
          nowait = false,
          arguments = []}).
 
-queue_bind(Channel, Queue, Exchange, RoutingKey, Nowait) ->
+queue_bind({channel, ChannelPid}, Queue, Exchange, RoutingKey, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid,
+          amqp_channel:call(ChannelPid,
                             #'queue.bind'{queue = Queue,
                                           exchange = Exchange,
                                           routing_key = RoutingKey,
@@ -450,21 +492,21 @@ queue_bind(Channel, Queue, Exchange, RoutingKey, Nowait) ->
       {_, {'queue.bind_ok'}} ->
         {ok, nil};
       {_, Error} ->
-        convert_error(Error)
+        convert_queue_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_queue_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_queue_error(Reason)
   end.
 
 -record('queue.unbind',
         {ticket = 0, queue = <<"">>, exchange, routing_key = <<"">>, arguments = []}).
 
-queue_unbind(Channel, Queue, Exchange, RoutingKey) ->
+queue_unbind({channel, ChannelPid}, Queue, Exchange, RoutingKey) ->
   try
-    case amqp_channel:call(Channel#channel.pid,
+    case amqp_channel:call(ChannelPid,
                            #'queue.unbind'{queue = Queue,
                                            exchange = Exchange,
                                            routing_key = RoutingKey})
@@ -472,34 +514,34 @@ queue_unbind(Channel, Queue, Exchange, RoutingKey) ->
       {'queue.unbind_ok'} ->
         {ok, nil};
       Error ->
-        convert_error(Error)
+        convert_queue_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_queue_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_queue_error(Reason)
   end.
 
 -record('queue.purge', {ticket = 0, queue = <<"">>, nowait = false}).
 
-queue_purge(Channel, Queue, Nowait) ->
+queue_purge({channel, ChannelPid}, Queue, Nowait) ->
   try
     case {Nowait,
-          amqp_channel:call(Channel#channel.pid, #'queue.purge'{queue = Queue, nowait = Nowait})}
+          amqp_channel:call(ChannelPid, #'queue.purge'{queue = Queue, nowait = Nowait})}
     of
       {true, ok} ->
         {ok, nil};
       {_, {'queue.purge_ok', MessageCount}} ->
         {ok, MessageCount};
       {_, Error} ->
-        convert_error(Error)
+        convert_queue_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_queue_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_queue_error(Reason)
   end.
 
 -record('basic.publish',
@@ -525,10 +567,10 @@ queue_purge(Channel, Queue, Nowait) ->
          cluster_id}).
 -record(amqp_msg, {props = #'P_basic'{}, payload = <<>>}).
 
-publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
+publish({channel, ChannelPid}, Exchange, RoutingKey, Payload, Proplist) ->
   try
     Headers =
-      case proplists:get_value(headers, Proplist, undefined) of
+      case proplists:get_value(message_headers, Proplist, undefined) of
         {header_list, HeaderList} ->
           HeaderList;
         _ ->
@@ -555,7 +597,7 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
                  user_id = proplists:get_value(user_id, Proplist, undefined),
                  app_id = proplists:get_value(app_id, Proplist, undefined),
                  cluster_id = proplists:get_value(cluster_id, Proplist, undefined)},
-    case amqp_channel:call(Channel#channel.pid,
+    case amqp_channel:call(ChannelPid,
                            #'basic.publish'{exchange = Exchange,
                                             routing_key = RoutingKey,
                                             mandatory =
@@ -567,13 +609,13 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
       ok ->
         {ok, nil};
       Error ->
-        convert_error(Error)
+        convert_publish_error(Error)
     end
   catch
     exit:Reason ->
-      convert_error(Reason);
+      convert_publish_error(Reason);
     error:Reason ->
-      convert_error(Reason)
+      convert_publish_error(Reason)
   end.
 
 -record('basic.consume',
@@ -586,9 +628,9 @@ publish(Channel, Exchange, RoutingKey, Payload, Proplist) ->
          nowait = false,
          arguments = []}).
 
-consume(Channel, Queue, Pid, NoAck) ->
+consume({channel, ChannelPid}, Queue, Pid, NoAck) ->
   % AMQP will send messages directly to Pid, including basic.consume_ok
-  case amqp_channel:subscribe(Channel#channel.pid,
+  case amqp_channel:subscribe(ChannelPid,
                               #'basic.consume'{queue = Queue, no_ack = NoAck},
                               Pid)
   of
@@ -596,42 +638,41 @@ consume(Channel, Queue, Pid, NoAck) ->
       % The AMQP client might send basic.consume_ok directly to Pid
       % Don't send it again
       {ok, ConsumerTag_};
-    _ ->
-      {error, unexpected_response}
+    Error ->
+      convert_consume_error(Error)
   end.
 
 -record('basic.ack', {delivery_tag = 0, multiple = false}).
 
-ack(Channel, DeliveryTag, Multiple) ->
-  case amqp_channel:call(Channel#channel.pid,
+ack({channel, ChannelPid}, DeliveryTag, Multiple) ->
+  case amqp_channel:call(ChannelPid,
                          #'basic.ack'{delivery_tag = DeliveryTag, multiple = Multiple})
   of
     ok ->
       {ok, nil};
     Error ->
-      convert_error(Error)
+      convert_consume_error(Error)
   end.
 
 -record('basic.cancel', {consumer_tag, nowait = false}).
 
-unsubscribe(Channel, ConsumerTag, Nowait) ->
-  case {Nowait,
-        amqp_channel:call(Channel#channel.pid, #'basic.cancel'{consumer_tag = ConsumerTag})}
+unsubscribe({channel, ChannelPid}, ConsumerTag, Nowait) ->
+  case {Nowait, amqp_channel:call(ChannelPid, #'basic.cancel'{consumer_tag = ConsumerTag})}
   of
     {true, ok} ->
       {ok, nil};
     {_, {'basic.cancel_ok', _}} ->
       {ok, nil};
     {_, Error} ->
-      convert_error(Error)
+      convert_consume_error(Error)
   end.
 
-close(CarotteClient) ->
-  case amqp_connection:close(CarotteClient#client.pid) of
+close({client, Pid, _Config}) ->
+  case amqp_connection:close(Pid) of
     ok ->
       {ok, nil};
     {error, Error} ->
-      convert_error(Error)
+      convert_connection_error(Error)
   end.
 
 header_value_to_header_tuple(Value) ->
@@ -658,3 +699,7 @@ parse_amqp_headers(Headers) when is_list(Headers) ->
   {header_list, Headers};
 parse_amqp_headers(_) ->
   {header_list, []}.
+
+% Check if the connection process is alive
+is_process_alive({client, Pid, _Config}) ->
+  erlang:is_process_alive(Pid).

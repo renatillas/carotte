@@ -1,4 +1,4 @@
-# Carotte 🥕
+# Carotte
 
 [![Package Version](https://img.shields.io/hexpm/v/carotte)](https://hex.pm/packages/carotte)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/carotte/)
@@ -9,11 +9,14 @@ A type-safe RabbitMQ client for Gleam that provides a clean, idiomatic interface
 
 - **Type-safe API** - Leverage Gleam's type system for safe message handling
 - **High Performance** - Built on top of the battle-tested `amqp_client` Erlang library
-- **Idiomatic Gleam** - Clean, functional API that feels natural in Gleam
+- **Idiomatic Gleam** - Clean, functional API with everything in a single module
 - **Complete Feature Set** - Support for exchanges, queues, publishing, consuming, and more
+- **Supervised Consumers** - OTP-based consumer supervision with automatic restarts
+- **Connection Helpers** - Built-in reconnection support and connection monitoring
 - **Async Operations** - Non-blocking operations with `_async` variants
 - **Flexible Message Acknowledgment** - Manual acknowledgment support for reliable message processing
 - **Full Headers Support** - Send and receive message headers with type-safe accessors
+- **Operation-Specific Error Types** - Granular error types for precise error handling
 
 ## Installation
 
@@ -25,38 +28,34 @@ gleam add carotte
 
 ```gleam
 import carotte
-import carotte/channel
-import carotte/exchange
-import carotte/queue
-import carotte/publisher
 import gleam/io
 
 pub fn main() {
   // Connect to RabbitMQ
-  let assert Ok(client) = 
-    carotte.default_client()
-    |> carotte.with_host("localhost")
-    |> carotte.with_port(5672)
+  let assert Ok(client) =
+    carotte.ClientConfig(
+      ..carotte.default_client(),
+      host: "localhost",
+      port: 5672,
+    )
     |> carotte.start()
 
   // Open a channel
-  let assert Ok(ch) = channel.open_channel(client)
+  let assert Ok(ch) = carotte.open_channel(client)
 
   // Declare an exchange
-  let assert Ok(_) = 
-    exchange.new("my_exchange")
-    |> exchange.with_type(exchange.Direct)
-    |> exchange.declare(ch)
+  let assert Ok(_) =
+    carotte.Exchange(..carotte.exchange("my_exchange"), exchange_type: carotte.Direct)
+    |> carotte.declare_exchange(ch)
 
-  // Declare a queue
-  let assert Ok(_) = 
-    queue.new("my_queue")
-    |> queue.as_durable()
-    |> queue.declare(ch)
+  // Declare a durable queue
+  let assert Ok(_) =
+    carotte.QueueConfig(..carotte.queue("my_queue"), durable: True)
+    |> carotte.declare_queue(ch)
 
   // Bind queue to exchange
-  let assert Ok(_) = 
-    queue.bind(
+  let assert Ok(_) =
+    carotte.bind_queue(
       channel: ch,
       queue: "my_queue",
       exchange: "my_exchange",
@@ -64,8 +63,8 @@ pub fn main() {
     )
 
   // Publish a message
-  let assert Ok(_) = 
-    publisher.publish(
+  let assert Ok(_) =
+    carotte.publish(
       channel: ch,
       exchange: "my_exchange",
       routing_key: "my_routing_key",
@@ -73,18 +72,23 @@ pub fn main() {
       options: [],
     )
 
-  // Subscribe to messages
-  let assert Ok(consumer_tag) = 
-    queue.subscribe(
+  // Start a consumer supervisor (max 5 restarts in 10 seconds)
+  let assert Ok(sup) = carotte.consumer_start(intensity: 5, period: 10)
+
+  // Subscribe to messages (supervised)
+  let assert Ok(consumer) =
+    carotte.subscribe(
+      sup,
       channel: ch,
       queue: "my_queue",
-      callback: fn(msg, deliver) {
+      callback: fn(msg, _deliver) {
         io.println("Received: " <> msg.payload)
         // Messages are auto-acknowledged by default
       },
     )
 
   // Clean up
+  let assert Ok(_) = carotte.unsubscribe(sup, consumer)
   let assert Ok(_) = carotte.close(client)
 }
 ```
@@ -96,14 +100,28 @@ pub fn main() {
 Create and configure a RabbitMQ connection:
 
 ```gleam
-let client = 
-  carotte.default_client()
-  |> carotte.with_username("admin")
-  |> carotte.with_password("secret")
-  |> carotte.with_host("rabbitmq.example.com")
-  |> carotte.with_virtual_host("/production")
-  |> carotte.with_heartbeat(30)
+let assert Ok(client) =
+  carotte.ClientConfig(
+    ..carotte.default_client(),
+    username: "admin",
+    password: "secret",
+    host: "rabbitmq.example.com",
+    virtual_host: "/production",
+    heartbeat: 30,
+  )
   |> carotte.start()
+
+// Check connection status
+assert carotte.is_connected(client) == True
+
+// Reconnect if needed
+case carotte.is_connected(client) {
+  True -> client
+  False -> {
+    let assert Ok(new_client) = carotte.reconnect(client)
+    new_client
+  }
+}
 ```
 
 ### Exchanges
@@ -111,11 +129,13 @@ let client =
 Carotte supports all RabbitMQ exchange types:
 
 ```gleam
-// Create a topic exchange
-exchange.new("logs")
-|> exchange.with_type(exchange.Topic)
-|> exchange.as_durable()
-|> exchange.declare(channel)
+// Create a durable topic exchange
+carotte.Exchange(
+  ..carotte.exchange("logs"),
+  exchange_type: carotte.Topic,
+  durable: True,
+)
+|> carotte.declare_exchange(channel)
 
 // Available exchange types:
 // - Direct: Route based on exact routing key match
@@ -126,14 +146,16 @@ exchange.new("logs")
 
 ### Queues
 
-Declare and configure queues:
+Declare and configure queues using record update syntax:
 
 ```gleam
-queue.new("task_queue")
-|> queue.as_durable()        // Survive broker restart
-|> queue.as_exclusive()      // Only one consumer allowed
-|> queue.with_auto_delete()  // Delete when last consumer disconnects
-|> queue.declare(channel)
+carotte.QueueConfig(
+  ..carotte.queue("task_queue"),
+  durable: True,       // Survive broker restart
+  exclusive: True,     // Only one consumer allowed
+  auto_delete: True,   // Delete when last consumer disconnects
+)
+|> carotte.declare_queue(channel)
 ```
 
 ### Publishing Messages
@@ -141,56 +163,72 @@ queue.new("task_queue")
 Publish messages with various options:
 
 ```gleam
-publisher.publish(
+carotte.publish(
   channel: ch,
   exchange: "notifications",
   routing_key: "user.signup",
   payload: json.to_string(user_data),
   options: [
-    publisher.Persistent(True),
-    publisher.ContentType("application/json"),
-    publisher.Headers(
-      publisher.headers_from_list([
-        #("user_id", publisher.StringHeader("123")),
-        #("retry_count", publisher.IntHeader(0)),
+    carotte.Persistent(True),
+    carotte.ContentType("application/json"),
+    carotte.MessageHeaders(
+      carotte.headers_from_list([
+        #("user_id", carotte.StringHeader("123")),
+        #("retry_count", carotte.IntHeader(0)),
       ])
     ),
-    publisher.Expiration("60000"), // Message expires in 60 seconds
+    carotte.Expiration("60000"), // Message expires in 60 seconds
   ]
 )
 ```
 
-### Consuming Messages
+### Supervised Consumers
 
-Subscribe to queues and handle messages:
+Carotte integrates with gleam_otp for proper OTP supervision of consumers. The recommended approach is to add the consumer supervisor to your application's supervision tree using `consumer_supervised`:
 
 ```gleam
-queue.subscribe(
-  channel: ch,
-  queue: "work_queue",
-  callback: fn(payload, deliver) {
-    // Process the message
-    io.println("Processing: " <> payload.payload)
+import gleam/erlang/process
+import gleam/otp/static_supervisor
 
-    // Access delivery metadata
-    io.println("Exchange: " <> deliver.exchange)
-    io.println("Routing key: " <> deliver.routing_key)
+pub fn start_app() {
+  // Create a name for the consumer supervisor at program startup
+  let consumers_name = process.new_name("consumers")
 
-    // Access message headers
-    let headers = publisher.headers_to_list(payload.headers)
-    list.each(headers, fn(header) {
-      case header {
-        #(name, publisher.StringHeader(value)) ->
-          io.println("Header " <> name <> ": " <> value)
-        #(name, publisher.IntHeader(value)) ->
-          io.println("Header " <> name <> ": " <> int.to_string(value))
-        _ -> Nil
+  // Create the child specification (max 5 restarts in 10 seconds)
+  let consumer_spec = carotte.consumer_supervised(consumers_name, intensity: 5, period: 10)
+
+  // Add to your application's supervision tree
+  let assert Ok(_) =
+    static_supervisor.new(static_supervisor.OneForOne)
+    |> static_supervisor.add(consumer_spec)
+    |> static_supervisor.start()
+
+  // Later, get the supervisor reference to subscribe consumers
+  let sup = carotte.get_consumer_supervisor(consumers_name)
+
+  // Subscribe to queues (consumers are supervised)
+  let assert Ok(consumer) =
+    carotte.subscribe(
+      sup,
+      channel: ch,
+      queue: "work_queue",
+      callback: fn(payload, deliver) {
+        io.println("Processing: " <> payload.payload)
+        io.println("Exchange: " <> deliver.exchange)
+        io.println("Routing key: " <> deliver.routing_key)
+        // If callback crashes, consumer will be restarted by supervisor
       }
-    })
+    )
+}
+```
 
-    // Message is automatically acknowledged on success
-  }
-)
+**Standalone mode** (for simpler use cases without a supervision tree):
+
+```gleam
+// Start supervisor directly (linked to calling process, max 5 restarts in 10 seconds)
+let assert Ok(sup) = carotte.consumer_start(intensity: 5, period: 10)
+
+let assert Ok(consumer) = carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: handler)
 ```
 
 ### Manual Acknowledgment
@@ -198,11 +236,29 @@ queue.subscribe(
 For more control over message acknowledgment:
 
 ```gleam
-// Acknowledge a single message
-let assert Ok(_) = queue.ack_single(ch, deliver.delivery_tag)
+let assert Ok(consumer) =
+  carotte.subscribe_with_options(
+    sup,
+    channel: ch,
+    queue: "work_queue",
+    callback: fn(msg, deliver) {
+      // Process the message
+      case process_message(msg) {
+        Ok(_) -> {
+          // Acknowledge on success
+          let assert Ok(_) = carotte.ack_single(ch, deliver.delivery_tag)
+        }
+        Error(_) -> {
+          // Don't ack - message will be redelivered
+        }
+      }
+      Nil
+    },
+    options: [carotte.AutoAck(False)],
+  )
 
-// Acknowledge multiple messages
-let assert Ok(_) = queue.ack(ch, deliver.delivery_tag, True)
+// Acknowledge multiple messages at once
+let assert Ok(_) = carotte.ack(ch, deliver.delivery_tag, True)
 ```
 
 ### Message Headers
@@ -211,26 +267,26 @@ Carotte supports reading and writing message headers. Headers can contain variou
 
 ```gleam
 // Available header types
-publisher.BoolHeader(True)
-publisher.IntHeader(42)
-publisher.FloatHeader(3.14)
-publisher.StringHeader("hello")
-publisher.ListHeader([publisher.IntHeader(1), publisher.IntHeader(2)])
+carotte.BoolHeader(True)
+carotte.IntHeader(42)
+carotte.FloatHeader(3.14)
+carotte.StringHeader("hello")
+carotte.ListHeader([carotte.IntHeader(1), carotte.IntHeader(2)])
 ```
 
 **Sending headers:**
 
 ```gleam
-publisher.publish(
+carotte.publish(
   channel: ch,
   exchange: "my_exchange",
   routing_key: "my_key",
   payload: "Hello!",
   options: [
-    publisher.Headers(
-      publisher.headers_from_list([
-        #("user_id", publisher.StringHeader("123")),
-        #("priority", publisher.IntHeader(1)),
+    carotte.MessageHeaders(
+      carotte.headers_from_list([
+        #("user_id", carotte.StringHeader("123")),
+        #("priority", carotte.IntHeader(1)),
       ])
     ),
   ],
@@ -240,101 +296,94 @@ publisher.publish(
 **Reading headers from received messages:**
 
 ```gleam
-queue.subscribe(
+carotte.subscribe(
+  sup,
   channel: ch,
   queue: "my_queue",
   callback: fn(payload, _deliver) {
     // Convert headers to a list of name-value pairs
-    let headers = publisher.headers_to_list(payload.headers)
+    let headers = carotte.headers_to_list(payload.headers)
 
     // Find a specific header
     let user_id = list.find(headers, fn(h) { h.0 == "user_id" })
 
     case user_id {
-      Ok(#(_, publisher.StringHeader(id))) -> io.println("User: " <> id)
+      Ok(#(_, carotte.StringHeader(id))) -> io.println("User: " <> id)
       _ -> io.println("No user_id header found")
     }
   },
 )
 ```
 
-**Working with empty headers:**
-
-```gleam
-// Create empty headers for pattern matching
-let empty = publisher.empty_headers()
-
-// Check if message has headers
-case payload.headers == publisher.empty_headers() {
-  True -> io.println("No headers")
-  False -> io.println("Has headers")
-}
-```
-
 ## Error Handling
 
-Carotte provides detailed error types for robust error handling:
+Carotte provides operation-specific error types for precise error handling. Each operation category has its own error type, making it easy to handle errors appropriately.
 
 ### Error Types
 
+| Error Type | Used By | Variants |
+|------------|---------|----------|
+| `ConnectionError` | `start`, `close`, `reconnect` | `ConnectionBlocked`, `ConnectionClosed`, `ConnectionAuthFailure`, `ConnectionRefused`, `ConnectionTimeout`, `NotConnected`, `AlreadyConnected`, `ReconnectionFailed`, `ConnectionUnknownError` |
+| `ChannelError` | `open_channel` | `ChannelClosed`, `ChannelProcessNotFound`, `ChannelConnectionClosed`, `ChannelUnknownError` |
+| `ExchangeError` | `declare_exchange`, `delete_exchange`, `bind_exchange`, `unbind_exchange` | `ExchangeNotFound`, `ExchangeAccessRefused`, `ExchangePreconditionFailed`, `ExchangeChannelClosed`, `ExchangeUnknownError` |
+| `QueueError` | `declare_queue`, `delete_queue`, `bind_queue`, `unbind_queue`, `purge_queue`, `queue_status` | `QueueNotFound`, `QueueAccessRefused`, `QueuePreconditionFailed`, `QueueResourceLocked`, `QueueChannelClosed`, `QueueUnknownError` |
+| `PublishError` | `publish` | `PublishNoRoute`, `PublishChannelClosed`, `PublishUnknownError` |
+| `ConsumeError` | `subscribe`, `unsubscribe`, `ack` | `ConsumeInitTimeout`, `ConsumeInitFailed`, `ConsumeProcessNotFound`, `ConsumeChannelClosed`, `ConsumeUnknownError` |
+
+### Handling Errors
+
 ```gleam
-pub type CarotteError {
-  // Connection errors
-  Blocked                        // Connection blocked by broker
-  Closed                         // Connection closed
-  ConnectionRefused(String)      // Connection refused by server
-  ConnectionTimeout(String)      // Connection or operation timed out
-  
-  // Authentication/Authorization
-  AuthFailure(String)           // Authentication failed
-  AccessRefused(String)         // Access denied to resource
-  NotAllowed(String)            // Operation not allowed
-  
-  // Resource errors  
-  ProcessNotFound               // Process/connection not found
-  AlreadyRegistered(String)     // Process name already registered
-  NotFound(String)              // Resource not found (exchange, queue, etc.)
-  ResourceLocked(String)        // Resource is locked (exclusive queue, etc.)
-  
-  // Protocol errors
-  ChannelClosed(String)         // Channel was closed
-  FrameError(String)            // AMQP frame error
-  UnexpectedFrame(String)       // Unexpected frame received
-  CommandInvalid(String)        // Invalid AMQP command
-  
-  // Operational errors
-  PreconditionFailed(String)    // Precondition not met (e.g., queue in use)
-  NoRoute(String)               // No route found for message
-  InvalidPath(String)           // Invalid resource path
-  NotImplemented(String)        // Feature not implemented
-  InternalError(String)         // Internal server error
-  
-  // Fallback
-  UnknownError(String)          // Unknown/unmapped error
+// Connection errors
+case carotte.start(client_config) {
+  Ok(client) -> process_messages(client)
+  Error(carotte.ConnectionAuthFailure(msg)) -> {
+    io.println("Authentication failed: " <> msg)
+  }
+  Error(carotte.ConnectionTimeout(msg)) -> {
+    io.println("Connection timeout: " <> msg)
+  }
+  Error(other) -> {
+    io.println("Connection error: " <> carotte.describe_connection_error(other))
+  }
+}
+
+// Queue errors
+case carotte.declare_queue(my_queue, channel) {
+  Ok(queue) -> use_queue(queue)
+  Error(carotte.QueueAccessRefused(msg)) -> {
+    io.println("Access refused: " <> msg)
+  }
+  Error(carotte.QueuePreconditionFailed(msg)) -> {
+    io.println("Queue configuration mismatch: " <> msg)
+  }
+  Error(other) -> {
+    io.println("Queue error: " <> carotte.describe_queue_error(other))
+  }
+}
+
+// Publish errors
+case carotte.publish(channel:, exchange:, routing_key:, payload:, options: [carotte.Mandatory(True)]) {
+  Ok(_) -> io.println("Message published")
+  Error(carotte.PublishNoRoute(msg)) -> {
+    io.println("No route for message: " <> msg)
+  }
+  Error(other) -> {
+    io.println("Publish error: " <> carotte.describe_publish_error(other))
+  }
 }
 ```
 
-Handle errors appropriately:
+### Error Description Functions
+
+Each error type has a corresponding `describe_*_error` function that converts the error to a human-readable string:
 
 ```gleam
-case carotte.start(client_config) {
-  Ok(client) -> {
-    // Connection successful
-    process_messages(client)
-  }
-  Error(AuthFailure(msg)) -> {
-    io.println("Authentication failed: " <> msg)
-    // Handle auth error
-  }
-  Error(ConnectionTimeout(msg)) -> {
-    io.println("Connection timeout: " <> msg)
-    // Retry connection
-  }
-  Error(other) -> {
-    io.println("Connection error: " <> string.inspect(other))
-    // Handle other errors
-  }
-}
+carotte.describe_connection_error(err)  // ConnectionError -> String
+carotte.describe_channel_error(err)     // ChannelError -> String
+carotte.describe_exchange_error(err)    // ExchangeError -> String
+carotte.describe_queue_error(err)       // QueueError -> String
+carotte.describe_publish_error(err)     // PublishError -> String
+carotte.describe_consume_error(err)     // ConsumeError -> String
 ```
 
 ## Advanced Features
@@ -345,14 +394,14 @@ Most operations have async variants for non-blocking execution:
 
 ```gleam
 // Async queue declaration
-queue.declare_async(my_queue, channel)
+carotte.declare_queue_async(my_queue, channel)
 
 // Async exchange deletion
-exchange.delete_async(channel: ch, exchange: "old_exchange", unused: True)
+carotte.delete_exchange_async(channel:, exchange: "old_exchange", if_unused: True)
 
 // Async queue binding
-queue.bind_async(
-  channel: ch,
+carotte.bind_queue_async(
+  channel:,
   queue: "my_queue",
   exchange: "my_exchange",
   routing_key: "key"
@@ -365,16 +414,16 @@ Perform administrative operations on queues:
 
 ```gleam
 // Get queue status
-let assert Ok(status) = queue.status(channel: ch, queue: "my_queue")
+let assert Ok(status) = carotte.queue_status(channel:, queue: "my_queue")
 io.println("Messages: " <> int.to_string(status.message_count))
 io.println("Consumers: " <> int.to_string(status.consumer_count))
 
 // Purge all messages from a queue
-let assert Ok(message_count) = queue.purge(channel: ch, queue: "my_queue")
+let assert Ok(message_count) = carotte.purge_queue(channel:, queue: "my_queue")
 
 // Delete a queue
-let assert Ok(_) = queue.delete(
-  channel: ch,
+let assert Ok(_) = carotte.delete_queue(
+  channel:,
   queue: "my_queue",
   if_unused: True,  // Only delete if no consumers
   if_empty: True    // Only delete if empty
@@ -387,18 +436,18 @@ Create complex routing topologies:
 
 ```gleam
 // Bind exchange to exchange
-exchange.bind(
-  channel: ch,
+carotte.bind_exchange(
+  channel:,
   source: "raw_logs",
   destination: "processed_logs",
   routing_key: "*.error"
 )
 
 // Unbind when no longer needed
-exchange.unbind(
-  channel: ch,
+carotte.unbind_exchange(
+  channel:,
   source: "raw_logs",
-  destination: "processed_logs", 
+  destination: "processed_logs",
   routing_key: "*.error"
 )
 ```
@@ -412,24 +461,24 @@ Distribute time-consuming tasks among multiple workers:
 ```gleam
 // Producer
 pub fn send_task(channel, task_data) {
-  publisher.publish(
-    channel: channel,
+  carotte.publish(
+    channel:,
     exchange: "",
     routing_key: "task_queue",
     payload: task_data,
-    options: [publisher.Persistent(True)]
+    options: [carotte.Persistent(True)]
   )
 }
 
 // Worker
-pub fn start_worker(channel) {
-  let assert Ok(queue) = 
-    queue.new("task_queue")
-    |> queue.as_durable()
-    |> queue.declare(channel)
+pub fn start_worker(channel, supervisor) {
+  let assert Ok(_) =
+    carotte.QueueConfig(..carotte.queue("task_queue"), durable: True)
+    |> carotte.declare_queue(channel)
 
-  queue.subscribe(
-    channel: channel,
+  carotte.subscribe(
+    supervisor,
+    channel:,
     queue: "task_queue",
     callback: fn(payload, _meta) {
       // Simulate work
@@ -447,8 +496,8 @@ Send messages to multiple consumers:
 ```gleam
 // Publisher
 pub fn broadcast_event(channel, event) {
-  publisher.publish(
-    channel: channel,
+  carotte.publish(
+    channel:,
     exchange: "events",
     routing_key: "",  // Fanout ignores routing key
     payload: event,
@@ -457,31 +506,30 @@ pub fn broadcast_event(channel, event) {
 }
 
 // Subscriber
-pub fn subscribe_to_events(channel, handler) {
+pub fn subscribe_to_events(channel, supervisor, handler) {
   // Create fanout exchange
-  let assert Ok(_) = 
-    exchange.new("events")
-    |> exchange.with_type(exchange.Fanout)
-    |> exchange.declare(channel)
+  let assert Ok(_) =
+    carotte.Exchange(..carotte.exchange("events"), exchange_type: carotte.Fanout)
+    |> carotte.declare_exchange(channel)
 
   // Create exclusive queue for this subscriber
-  let assert Ok(q) = 
-    queue.new("")  // Server-generated name
-    |> queue.as_exclusive()
-    |> queue.declare(channel)
+  let assert Ok(q) =
+    carotte.QueueConfig(..carotte.queue(""), exclusive: True)
+    |> carotte.declare_queue(channel)
 
   // Bind to exchange
-  let assert Ok(_) = 
-    queue.bind(
-      channel: channel,
+  let assert Ok(_) =
+    carotte.bind_queue(
+      channel:,
       queue: q.name,
       exchange: "events",
       routing_key: ""
     )
 
   // Subscribe
-  queue.subscribe(
-    channel: channel,
+  carotte.subscribe(
+    supervisor,
+    channel:,
     queue: q.name,
     callback: handler
   )
@@ -494,30 +542,29 @@ Route messages based on patterns:
 
 ```gleam
 // Setup topic exchange
-let assert Ok(_) = 
-  exchange.new("logs")
-  |> exchange.with_type(exchange.Topic)
-  |> exchange.declare(channel)
+let assert Ok(_) =
+  carotte.Exchange(..carotte.exchange("logs"), exchange_type: carotte.Topic)
+  |> carotte.declare_exchange(channel)
 
 // Subscribe to error logs from any service
-queue.bind(
-  channel: channel,
+carotte.bind_queue(
+  channel:,
   queue: "error_logs",
   exchange: "logs",
   routing_key: "*.error"
 )
 
 // Subscribe to all logs from auth service
-queue.bind(
-  channel: channel,
+carotte.bind_queue(
+  channel:,
   queue: "auth_logs",
   exchange: "logs",
   routing_key: "auth.*"
 )
 
 // Publish logs
-publisher.publish(
-  channel: channel,
+carotte.publish(
+  channel:,
   exchange: "logs",
   routing_key: "auth.error",  // Will go to both queues
   payload: "Authentication failed",
@@ -525,16 +572,10 @@ publisher.publish(
 )
 ```
 
-## Requirements
-
-- Gleam 1.0 or later
-- Erlang/OTP 26 or later
-- RabbitMQ 3.x or later
-
 ## Development
 
 ```bash
-# Run tests
+# Run tests (requires local RabbitMQ on localhost:5672)
 gleam test
 
 # Build documentation
@@ -560,6 +601,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Support
 
-- 📚 [Documentation](https://hexdocs.pm/carotte)
-- 🐛 [Issue Tracker](https://github.com/renatillas/carotte/issues)
-- 💬 [Discussions](https://github.com/renatillas/carotte/discussions)
+- [Documentation](https://hexdocs.pm/carotte)
+- [Issue Tracker](https://github.com/renatillas/carotte/issues)
+- [Discussions](https://github.com/renatillas/carotte/discussions)
