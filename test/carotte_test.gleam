@@ -5,6 +5,7 @@ import carotte/publisher
 import carotte/queue
 import gleam/erlang/process
 import gleam/list
+import gleam/string
 import gleeunit
 
 pub fn main() {
@@ -405,4 +406,20 @@ pub fn receive_headers_test() {
 
   let assert Ok(#(_, publisher.BoolHeader(True))) =
     list.find(received_headers, fn(h) { h.0 == "bool_key" })
+}
+
+pub fn declare_queue_with_auto_generated_name_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = channel.open_channel(client)
+
+  // Declare a queue with an empty name - RabbitMQ should generate one
+  let assert Ok(queue.DeclaredQueue(name:, message_count: 0, consumer_count: 0)) =
+    queue.new("")
+    |> queue.as_exclusive()
+    |> queue.with_auto_delete()
+    |> queue.declare(channel)
+
+  assert name != ""
+  // RabbitMQ auto-generated names start with "amq.gen-"
+  assert string.starts_with(name, "amq.gen-")
 }
