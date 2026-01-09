@@ -28,6 +28,7 @@ gleam add carotte
 
 ```gleam
 import carotte
+import gleam/erlang/process
 import gleam/io
 
 pub fn main() {
@@ -72,13 +73,14 @@ pub fn main() {
       options: [],
     )
 
-  // Start a consumer supervisor (max 5 restarts in 10 seconds)
-  let assert Ok(sup) = carotte.consumer_start(intensity: 5, period: 10)
+  // Start a consumer supervisor
+  let consumers = process.new_name("consumers")
+  let assert Ok(connection) = carotte.consumer_start(consumers)
 
   // Subscribe to messages (supervised)
   let assert Ok(consumer) =
     carotte.subscribe(
-      sup,
+      connection,
       channel: ch,
       queue: "my_queue",
       callback: fn(msg, _deliver) {
@@ -88,7 +90,7 @@ pub fn main() {
     )
 
   // Clean up
-  let assert Ok(_) = carotte.unsubscribe(sup, consumer)
+  let assert Ok(_) = carotte.unsubscribe(consumer)
   let assert Ok(_) = carotte.close(client)
 }
 ```
@@ -194,8 +196,8 @@ pub fn start_app() {
   // Create a name for the consumer supervisor at program startup
   let consumers_name = process.new_name("consumers")
 
-  // Create the child specification (max 5 restarts in 10 seconds)
-  let consumer_spec = carotte.consumer_supervised(consumers_name, intensity: 5, period: 10)
+  // Create the child specification
+  let consumer_spec = carotte.consumer_supervised(consumers_name)
 
   // Add to your application's supervision tree
   let assert Ok(_) =
@@ -203,13 +205,13 @@ pub fn start_app() {
     |> static_supervisor.add(consumer_spec)
     |> static_supervisor.start()
 
-  // Later, get the supervisor reference to subscribe consumers
-  let sup = carotte.get_consumer_supervisor(consumers_name)
+  // Later, get the connection reference to subscribe consumers
+  let connection = carotte.named_consumer_supervisor(consumers_name)
 
   // Subscribe to queues (consumers are supervised)
   let assert Ok(consumer) =
     carotte.subscribe(
-      sup,
+      connection,
       channel: ch,
       queue: "work_queue",
       callback: fn(payload, deliver) {
@@ -225,10 +227,11 @@ pub fn start_app() {
 **Standalone mode** (for simpler use cases without a supervision tree):
 
 ```gleam
-// Start supervisor directly (linked to calling process, max 5 restarts in 10 seconds)
-let assert Ok(sup) = carotte.consumer_start(intensity: 5, period: 10)
+// Start supervisor directly (linked to calling process)
+let consumers = process.new_name("consumers")
+let assert Ok(connection) = carotte.consumer_start(consumers)
 
-let assert Ok(consumer) = carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: handler)
+let assert Ok(consumer) = carotte.subscribe(connection, channel: ch, queue: "my_queue", callback: handler)
 ```
 
 ### Manual Acknowledgment
@@ -238,7 +241,7 @@ For more control over message acknowledgment:
 ```gleam
 let assert Ok(consumer) =
   carotte.subscribe_with_options(
-    sup,
+    connection,
     channel: ch,
     queue: "work_queue",
     callback: fn(msg, deliver) {
@@ -297,7 +300,7 @@ carotte.publish(
 
 ```gleam
 carotte.subscribe(
-  sup,
+  connection,
   channel: ch,
   queue: "my_queue",
   callback: fn(payload, _deliver) {
@@ -471,13 +474,13 @@ pub fn send_task(channel, task_data) {
 }
 
 // Worker
-pub fn start_worker(channel, supervisor) {
+pub fn start_worker(channel, connection) {
   let assert Ok(_) =
     carotte.QueueConfig(..carotte.queue("task_queue"), durable: True)
     |> carotte.declare_queue(channel)
 
   carotte.subscribe(
-    supervisor,
+    connection,
     channel:,
     queue: "task_queue",
     callback: fn(payload, _meta) {
@@ -506,7 +509,7 @@ pub fn broadcast_event(channel, event) {
 }
 
 // Subscriber
-pub fn subscribe_to_events(channel, supervisor, handler) {
+pub fn subscribe_to_events(channel, connection, handler) {
   // Create fanout exchange
   let assert Ok(_) =
     carotte.Exchange(..carotte.exchange("events"), exchange_type: carotte.Fanout)
@@ -528,7 +531,7 @@ pub fn subscribe_to_events(channel, supervisor, handler) {
 
   // Subscribe
   carotte.subscribe(
-    supervisor,
+    connection,
     channel:,
     queue: q.name,
     callback: handler

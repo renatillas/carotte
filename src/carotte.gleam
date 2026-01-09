@@ -27,8 +27,8 @@
 ////   },
 ////   {
 ////     header: "Consuming",
-////     types: ["ConsumerSupervisor", "ConsumerSupervisorMessage", "Consumer", "ConsumerInfo"],
-////     functions: ["consumer_start", "consumer_supervised", "get_consumer_supervisor", "subscribe", "subscribe_with_options", "unsubscribe", "unsubscribe_async", "ack", "ack_single", "consumer_info"]
+////     types: ["Consumer", "ConsumerSupervisorMessage"],
+////     functions: ["start_consumer", "consumer_supervised", "named_consumer", "subscribe", "subscribe_with_options", "unsubscribe", "unsubscribe_async", "ack", "ack_single"]
 ////   },
 ////   {
 ////     header: "Errors",
@@ -122,6 +122,7 @@
 ////
 //// ```gleam
 //// import carotte
+//// import gleam/erlang/process
 //// import gleam/io
 ////
 //// pub fn main() {
@@ -135,8 +136,9 @@
 ////   let assert Ok(_) = carotte.bind_queue(channel: ch, queue: "my_queue", exchange: "my_exchange", routing_key: "")
 ////
 ////   // Start consumer supervisor and subscribe
-////   let assert Ok(sup) = carotte.consumer_start(carotte.default_consumer_supervisor())
-////   let assert Ok(_) = carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: fn(msg, _) {
+////   let consumers = process.new_name("consumers")
+////   let assert Ok(consumer) = carotte.start_consumer(consumers)
+////   let assert Ok(_) = carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: fn(msg, _) {
 ////     io.println("Received: " <> msg.payload)
 ////   })
 ////
@@ -161,6 +163,7 @@
 //// For production use, integrate consumers into your supervision tree:
 ////
 //// ```gleam
+//// import gleam/erlang/process
 //// import gleam/otp/static_supervisor
 ////
 //// let consumers_name = process.new_name("consumers")
@@ -170,8 +173,8 @@
 //// |> static_supervisor.add(spec)
 //// |> static_supervisor.start()
 ////
-//// let sup = carotte.get_consumer_supervisor(consumers_name)
-//// carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: handler)
+//// let consumer = carotte.named_consumer(consumers_name)
+//// carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: handler)
 //// ```
 ////
 //// ## Error Handling
@@ -535,21 +538,16 @@ pub opaque type ConsumerConfig {
   )
 }
 
-/// Opaque type representing a running consumer
+/// Opaque reference to a consumer supervisor.
+///
+/// Similar to how pog's Connection wraps a pool reference, this type
+/// wraps the consumer supervisor name. Use it to subscribe to queues.
+///
+/// - Use `start_consumer` or `named_consumer` to get a Consumer
+/// - Use `subscribe` with a Consumer to start consuming (returns consumer_tag)
+/// - Use `unsubscribe` with channel + consumer_tag to stop consuming
 pub opaque type Consumer {
-  Consumer(pid: Pid, consumer_tag: String, channel: Channel)
-}
-
-/// Information about a managed consumer
-pub type ConsumerInfo {
-  ConsumerInfo(consumer_tag: String, pid: Pid)
-}
-
-/// Opaque reference to a running consumer supervisor
-pub opaque type ConsumerSupervisor {
-  ConsumerSupervisor(
-    supervisor: factory_supervisor.Supervisor(ConsumerConfig, Consumer),
-  )
+  Consumer(name: process.Name(ConsumerSupervisorMessage))
 }
 
 // =============================================================================
@@ -1262,7 +1260,7 @@ fn do_publish(
 /// The message type for the consumer supervisor.
 /// Used when registering with a name.
 pub type ConsumerSupervisorMessage =
-  factory_supervisor.Message(ConsumerConfig, Consumer)
+  factory_supervisor.Message(ConsumerConfig, String)
 
 /// Start the consumer supervisor directly without adding it to a supervision tree.
 ///
@@ -1270,11 +1268,22 @@ pub type ConsumerSupervisorMessage =
 /// supervisor to your application's supervision tree instead of using this
 /// function directly.
 ///
-/// The supervisor will be linked to the calling process.
-pub fn consumer_start() -> Result(ConsumerSupervisor, actor.StartError) {
+/// The supervisor will be linked to the calling process and registered with
+/// the given name.
+///
+/// ## Example
+///
+/// ```gleam
+/// let name = process.new_name("my_consumers")
+/// let assert Ok(consumer) = carotte.start_consumer(name)
+/// ```
+pub fn start_consumer(
+  name: process.Name(ConsumerSupervisorMessage),
+) -> Result(Consumer, actor.StartError) {
   factory_supervisor.worker_child(start_consumer_actor)
+  |> factory_supervisor.named(name)
   |> factory_supervisor.start
-  |> result.map(fn(started) { ConsumerSupervisor(supervisor: started.data) })
+  |> result.map(fn(_) { Consumer(name) })
 }
 
 /// Create a child specification for adding the consumer supervisor to your
@@ -1305,14 +1314,14 @@ pub fn consumer_start() -> Result(ConsumerSupervisor, actor.StartError) {
 ///   |> static_supervisor.start()
 ///
 ///   // Later, get the supervisor to subscribe
-///   let sup = carotte.get_consumer_supervisor(consumers_name)
+///   let sup = carotte.named_consumer(consumers_name)
 ///   carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: handler)
 /// }
 /// ```
 pub fn consumer_supervised(
   name: process.Name(ConsumerSupervisorMessage),
 ) -> supervision.ChildSpecification(
-  factory_supervisor.Supervisor(ConsumerConfig, Consumer),
+  factory_supervisor.Supervisor(ConsumerConfig, String),
 ) {
   factory_supervisor.worker_child(start_consumer_actor)
   |> factory_supervisor.named(name)
@@ -1327,29 +1336,27 @@ pub fn consumer_supervised(
 /// ## Example
 ///
 /// ```gleam
-/// let sup = carotte.get_consumer_supervisor(consumers_name)
+/// let consumer = carotte.named_consumer(consumers_name)
 /// ```
-///
-/// ## Panics
-///
-/// This will panic if no supervisor has been registered with the given name.
-/// Always ensure your supervisor is started before calling this function.
-pub fn get_consumer_supervisor(
+pub fn named_consumer(
   name: process.Name(ConsumerSupervisorMessage),
-) -> ConsumerSupervisor {
-  ConsumerSupervisor(supervisor: factory_supervisor.get_by_name(name))
+) -> Consumer {
+  Consumer(name)
 }
 
-/// Start a consumer under supervision
+/// Start a consumer under supervision.
+/// Returns the consumer_tag string which can be used to unsubscribe later.
 pub fn subscribe(
-  supervisor: ConsumerSupervisor,
+  consumer: Consumer,
   channel channel: Channel,
   queue queue: String,
   callback callback: fn(Payload, Deliver) -> Nil,
-) -> Result(Consumer, ConsumeError) {
+) -> Result(String, ConsumeError) {
+  let Consumer(name) = consumer
   let config = ConsumerConfig(channel:, queue:, auto_ack: True, callback:)
+  let supervisor = factory_supervisor.get_by_name(name)
 
-  factory_supervisor.start_child(supervisor.supervisor, config)
+  factory_supervisor.start_child(supervisor, config)
   |> result.map(fn(started) { started.data })
   |> result.map_error(fn(e) {
     case e {
@@ -1360,21 +1367,24 @@ pub fn subscribe(
   })
 }
 
-/// Start a consumer with options under supervision
+/// Start a consumer with options under supervision.
+/// Returns the consumer_tag string which can be used to unsubscribe later.
 pub fn subscribe_with_options(
-  supervisor: ConsumerSupervisor,
+  consumer: Consumer,
   channel channel: Channel,
   queue queue: String,
   options options: List(QueueOption),
   callback callback: fn(Payload, Deliver) -> Nil,
-) -> Result(Consumer, ConsumeError) {
+) -> Result(String, ConsumeError) {
+  let Consumer(name) = consumer
   let auto_ack = case options {
     [] -> True
     [AutoAck(ack), ..] -> ack
   }
   let config = ConsumerConfig(channel:, queue:, auto_ack:, callback:)
+  let supervisor = factory_supervisor.get_by_name(name)
 
-  factory_supervisor.start_child(supervisor.supervisor, config)
+  factory_supervisor.start_child(supervisor, config)
   |> result.map(fn(started) { started.data })
   |> result.map_error(fn(e) {
     case e {
@@ -1385,14 +1395,20 @@ pub fn subscribe_with_options(
   })
 }
 
-/// Unsubscribe and stop a consumer gracefully
-pub fn unsubscribe(consumer: Consumer) -> Result(Nil, ConsumeError) {
-  do_unsubscribe(consumer.channel, consumer.consumer_tag, False)
+/// Unsubscribe and stop a consumer gracefully.
+pub fn unsubscribe(
+  channel channel: Channel,
+  consumer_tag consumer_tag: String,
+) -> Result(Nil, ConsumeError) {
+  do_unsubscribe(channel, consumer_tag, False)
 }
 
-/// Unsubscribe a consumer asynchronously
-pub fn unsubscribe_async(consumer: Consumer) -> Result(Nil, ConsumeError) {
-  do_unsubscribe(consumer.channel, consumer.consumer_tag, True)
+/// Unsubscribe a consumer asynchronously.
+pub fn unsubscribe_async(
+  channel channel: Channel,
+  consumer_tag consumer_tag: String,
+) -> Result(Nil, ConsumeError) {
+  do_unsubscribe(channel, consumer_tag, True)
 }
 
 @external(erlang, "carotte_ffi", "unsubscribe")
@@ -1447,11 +1463,6 @@ fn do_basic_ack(
   multiple: Bool,
 ) -> Result(Nil, ConsumeError)
 
-/// Get consumer info from a Consumer
-pub fn consumer_info(consumer: Consumer) -> ConsumerInfo {
-  ConsumerInfo(consumer_tag: consumer.consumer_tag, pid: consumer.pid)
-}
-
 // =============================================================================
 // CONSUMER ACTOR (INTERNAL)
 // =============================================================================
@@ -1473,7 +1484,7 @@ type ConsumerMessage {
 
 fn start_consumer_actor(
   config: ConsumerConfig,
-) -> Result(actor.Started(Consumer), actor.StartError) {
+) -> Result(actor.Started(String), actor.StartError) {
   actor.new_with_initialiser(5000, fn(_self_subject) {
     // Subscribe to the AMQP queue
     let consumer_pid = process.self()
@@ -1507,11 +1518,7 @@ fn start_consumer_actor(
         Ok(
           actor.initialised(state)
           |> actor.selecting(selector)
-          |> actor.returning(Consumer(
-            pid: consumer_pid,
-            consumer_tag:,
-            channel: config.channel,
-          )),
+          |> actor.returning(consumer_tag),
         )
       }
       Error(_) -> Error("Failed to subscribe to queue")

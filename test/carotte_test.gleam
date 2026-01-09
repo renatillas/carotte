@@ -287,11 +287,12 @@ pub fn subscribe_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("subscribe_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   let assert Ok(_) =
     carotte.subscribe(
-      sup,
+      connection,
       channel: channel,
       queue: "consume_queue",
       callback: fn(payload, _) {
@@ -358,17 +359,18 @@ pub fn unsubscribe_test() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("unsubscribe_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
-  let assert Ok(consumer) =
+  let assert Ok(consumer_tag) =
     carotte.subscribe(
-      sup,
+      connection,
       channel: channel,
       queue: "unsubscribe_queue",
       callback: fn(_, _) { Nil },
     )
 
-  let assert Ok(_) = carotte.unsubscribe(consumer)
+  let assert Ok(_) = carotte.unsubscribe(channel: channel, consumer_tag:)
 }
 
 pub fn auth_failure_test() {
@@ -407,11 +409,12 @@ pub fn receive_headers_test() {
   let headers_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("headers_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   let assert Ok(_) =
     carotte.subscribe(
-      sup,
+      connection,
       channel: channel,
       queue: "headers_test_queue",
       callback: fn(payload, _) {
@@ -511,14 +514,15 @@ pub fn supervised_consumer_integration_test() {
   process.sleep(100)
 
   // 6. Get reference to the consumer supervisor by name
+  let connection = carotte.named_consumer(consumers_name)
 
   // 7. Set up message receiving
   let message_subject = process.new_subject()
 
   // 8. Subscribe to the queue using the supervised consumer supervisor
-  let assert Ok(consumer) =
+  let assert Ok(consumer_tag) =
     carotte.subscribe(
-      carotte.get_consumer_supervisor(consumers_name),
+      connection,
       channel:,
       queue: "supervised_test_queue",
       callback: fn(payload, _deliver) {
@@ -542,7 +546,7 @@ pub fn supervised_consumer_integration_test() {
     process.receive(message_subject, 2000)
 
   // 11. Clean up - unsubscribe
-  let assert Ok(_) = carotte.unsubscribe(consumer)
+  let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag:)
 
   // 12. Close connection
   let assert Ok(_) = carotte.close(client)
@@ -590,23 +594,34 @@ pub fn factory_supervisor_multiple_consumers_test() {
 
   // 3. Create a single consumer supervisor (factory supervisor)
   // This supervisor will manage multiple consumer children dynamically
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("factory_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // 4. Set up subjects to receive messages from each consumer
   let subject1 = process.new_subject()
   let subject2 = process.new_subject()
 
   // 5. Dynamically add first consumer to queue 1
-  let assert Ok(consumer1) =
-    carotte.subscribe(sup, channel:, queue: queue1, callback: fn(payload, _) {
-      process.send(subject1, "q1:" <> payload.payload)
-    })
+  let assert Ok(consumer_tag1) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: queue1,
+      callback: fn(payload, _) {
+        process.send(subject1, "q1:" <> payload.payload)
+      },
+    )
 
   // 6. Dynamically add second consumer to queue 2
-  let assert Ok(consumer2) =
-    carotte.subscribe(sup, channel:, queue: queue2, callback: fn(payload, _) {
-      process.send(subject2, "q2:" <> payload.payload)
-    })
+  let assert Ok(consumer_tag2) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: queue2,
+      callback: fn(payload, _) {
+        process.send(subject2, "q2:" <> payload.payload)
+      },
+    )
 
   // Give consumers time to start
   process.sleep(200)
@@ -634,7 +649,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
   let assert Ok("q2:msg2") = process.receive(subject2, 2000)
 
   // 9. Unsubscribe the first consumer while keeping the second active
-  let assert Ok(_) = carotte.unsubscribe(consumer1)
+  let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag: consumer_tag1)
   process.sleep(100)
 
   // 10. Publish another message to queue 2 - should still work
@@ -652,10 +667,15 @@ pub fn factory_supervisor_multiple_consumers_test() {
 
   // 12. Add a third consumer to queue 1 (demonstrating dynamic addition)
   let subject3 = process.new_subject()
-  let assert Ok(consumer3) =
-    carotte.subscribe(sup, channel:, queue: queue1, callback: fn(payload, _) {
-      process.send(subject3, "q1_new:" <> payload.payload)
-    })
+  let assert Ok(consumer_tag3) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: queue1,
+      callback: fn(payload, _) {
+        process.send(subject3, "q1_new:" <> payload.payload)
+      },
+    )
   process.sleep(100)
 
   // 13. Publish to queue 1 again - new consumer should receive it
@@ -671,8 +691,8 @@ pub fn factory_supervisor_multiple_consumers_test() {
   let assert Ok("q1_new:msg4") = process.receive(subject3, 2000)
 
   // 14. Clean up - unsubscribe remaining consumers
-  let assert Ok(_) = carotte.unsubscribe(consumer2)
-  let assert Ok(_) = carotte.unsubscribe(consumer3)
+  let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag: consumer_tag2)
+  let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag: consumer_tag3)
 
   // 15. Shutdown supervisor and close connection
   let assert Ok(_) = carotte.close(client)
@@ -691,7 +711,8 @@ pub fn factory_supervisor_manual_ack_test() {
   let assert Ok(_) = carotte.purge_queue(channel:, queue:)
 
   // 3. Start factory supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("manual_ack_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // 4. Set up subjects
   let received = process.new_subject()
@@ -699,7 +720,7 @@ pub fn factory_supervisor_manual_ack_test() {
   // 5. Subscribe with manual ack
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel:,
       queue:,
       options: [carotte.AutoAck(False)],

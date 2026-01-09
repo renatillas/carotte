@@ -45,9 +45,9 @@ convert_connection_error(Error) ->
 %% =============================================================================
 
 convert_channel_error(noproc) ->
-  {error, channel_process_not_found};
+  {error, channel_connection_closed};
 convert_channel_error({noproc, _}) ->
-  {error, channel_process_not_found};
+  {error, channel_connection_closed};
 convert_channel_error(closing) ->
   {error, channel_connection_closed};
 convert_channel_error(closed) ->
@@ -79,6 +79,10 @@ convert_channel_error(Error) ->
 %% EXCHANGE ERROR CONVERTER
 %% =============================================================================
 
+convert_exchange_error(noproc) ->
+  {error, {exchange_channel_closed, <<"Channel process not found">>}};
+convert_exchange_error({noproc, _}) ->
+  {error, {exchange_channel_closed, <<"Channel process not found">>}};
 convert_exchange_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
   convert_exchange_error({shutdown, {server_initiated_close, Code, Message}});
 convert_exchange_error({shutdown, {server_initiated_close, 404, Message}}) when is_list(Message) ->
@@ -185,6 +189,10 @@ convert_queue_error(Error) ->
 %% PUBLISH ERROR CONVERTER
 %% =============================================================================
 
+convert_publish_error(noproc) ->
+  {error, {publish_channel_closed, <<"Channel process not found">>}};
+convert_publish_error({noproc, _}) ->
+  {error, {publish_channel_closed, <<"Channel process not found">>}};
 convert_publish_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
   convert_publish_error({shutdown, {server_initiated_close, Code, Message}});
 convert_publish_error({shutdown, {server_initiated_close, 312, Message}}) when is_list(Message) ->
@@ -217,9 +225,9 @@ convert_publish_error(Error) ->
 %% =============================================================================
 
 convert_consume_error(noproc) ->
-  {error, consume_process_not_found};
+  {error, {consume_channel_closed, <<"Channel process not found">>}};
 convert_consume_error({noproc, _}) ->
-  {error, consume_process_not_found};
+  {error, {consume_channel_closed, <<"Channel process not found">>}};
 convert_consume_error({{shutdown, {server_initiated_close, Code, Message}}, _GenServerInfo}) ->
   convert_consume_error({shutdown, {server_initiated_close, Code, Message}});
 convert_consume_error({shutdown, {server_initiated_close, 503, Message}}) when is_list(Message) ->
@@ -645,26 +653,40 @@ consume({channel, ChannelPid}, Queue, Pid, NoAck) ->
 -record('basic.ack', {delivery_tag = 0, multiple = false}).
 
 ack({channel, ChannelPid}, DeliveryTag, Multiple) ->
-  case amqp_channel:call(ChannelPid,
-                         #'basic.ack'{delivery_tag = DeliveryTag, multiple = Multiple})
-  of
-    ok ->
-      {ok, nil};
-    Error ->
-      convert_consume_error(Error)
+  try
+    case amqp_channel:call(ChannelPid,
+                           #'basic.ack'{delivery_tag = DeliveryTag, multiple = Multiple})
+    of
+      ok ->
+        {ok, nil};
+      Error ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
   end.
 
 -record('basic.cancel', {consumer_tag, nowait = false}).
 
 unsubscribe({channel, ChannelPid}, ConsumerTag, Nowait) ->
-  case {Nowait, amqp_channel:call(ChannelPid, #'basic.cancel'{consumer_tag = ConsumerTag})}
-  of
-    {true, ok} ->
-      {ok, nil};
-    {_, {'basic.cancel_ok', _}} ->
-      {ok, nil};
-    {_, Error} ->
-      convert_consume_error(Error)
+  try
+    case {Nowait, amqp_channel:call(ChannelPid, #'basic.cancel'{consumer_tag = ConsumerTag})}
+    of
+      {true, ok} ->
+        {ok, nil};
+      {_, {'basic.cancel_ok', _}} ->
+        {ok, nil};
+      {_, Error} ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
   end.
 
 close({client, Pid, _Config}) ->

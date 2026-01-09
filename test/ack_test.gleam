@@ -29,11 +29,12 @@ pub fn manual_ack_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("manual_ack_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_ack_queue",
       callback: fn(msg, deliver) {
@@ -88,12 +89,13 @@ pub fn ack_single_test() {
   let message_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("ack_single_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // Subscribe and acknowledge each message individually
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_ack_single_queue",
       callback: fn(msg, deliver) {
@@ -174,13 +176,14 @@ pub fn ack_multiple_test() {
   let ack_subject = process.new_subject()
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("ack_multiple_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // Subscribe and ack only message 3 with multiple=True
   // This should acknowledge messages 1, 2, and 3
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_ack_multiple_queue",
       callback: fn(msg, meta) {
@@ -249,13 +252,14 @@ pub fn test_unacked_then_acked() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("unacked_then_acked_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // First consumer - receive but DON'T ack
   let received = process.new_subject()
-  let assert Ok(consumer) =
+  let assert Ok(consumer_tag) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, _deliver) {
@@ -272,14 +276,14 @@ pub fn test_unacked_then_acked() {
   let assert Ok("msg3") = process.receive(received, 1000)
 
   // Unsubscribe to release unacked messages back to queue
-  let assert Ok(Nil) = carotte.unsubscribe(consumer)
+  let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
   process.sleep(100)
 
   // Second consumer - now ACK the messages
   let received2 = process.new_subject()
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_unacked_then_acked_queue",
       callback: fn(msg, deliver) {
@@ -317,14 +321,15 @@ pub fn test_redelivery_flag() {
     )
 
   // Start the supervisor
-  let assert Ok(sup) = carotte.consumer_start()
+  let consumers = process.new_name("redelivery_flag_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
 
   // First consumer - receive but don't ack
   let received = process.new_subject()
   let redelivery_flag = process.new_subject()
-  let assert Ok(consumer) =
+  let assert Ok(consumer_tag) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {
@@ -341,7 +346,7 @@ pub fn test_redelivery_flag() {
   let assert Ok(False) = process.receive(redelivery_flag, 1000)
 
   // Cancel consumer - message should be requeued
-  let assert Ok(Nil) = carotte.unsubscribe(consumer)
+  let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
   process.sleep(100)
 
   // Subscribe again - should get redelivered message
@@ -350,7 +355,7 @@ pub fn test_redelivery_flag() {
 
   let assert Ok(_consumer) =
     carotte.subscribe_with_options(
-      sup,
+      connection,
       channel: ch,
       queue: "test_redelivery_flag_queue",
       callback: fn(msg, meta) {
