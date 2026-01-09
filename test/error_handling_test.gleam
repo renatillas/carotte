@@ -8,7 +8,11 @@ import gleam/erlang/process
 // Test connection refused - connect to wrong port
 pub fn connection_refused_test() {
   let config =
-    carotte.ClientConfig(..carotte.default_client(), port: 59999, host: "127.0.0.1")
+    carotte.ClientConfig(
+      ..carotte.default_client(),
+      port: 59_999,
+      host: "127.0.0.1",
+    )
   let assert Error(carotte.ConnectionRefused(_)) = carotte.start(config)
 }
 
@@ -35,7 +39,8 @@ pub fn channel_connection_closed_test() {
   let assert Ok(Nil) = carotte.close(client)
 
   // Try to open a channel on the closed connection
-  let assert Error(carotte.ChannelConnectionClosed) = carotte.open_channel(client)
+  let assert Error(carotte.ChannelConnectionClosed) =
+    carotte.open_channel(client)
 }
 
 // =============================================================================
@@ -82,7 +87,10 @@ pub fn exchange_precondition_failed_test() {
   // Declare a direct exchange
   let assert Ok(_) =
     carotte.declare_exchange(
-      carotte.Exchange(..carotte.exchange("precondition_test_ex"), exchange_type: carotte.Direct),
+      carotte.Exchange(
+        ..carotte.exchange("precondition_test_ex"),
+        exchange_type: carotte.Direct,
+      ),
       ch,
     )
 
@@ -92,7 +100,10 @@ pub fn exchange_precondition_failed_test() {
   // Try to redeclare as fanout - should fail with precondition failed
   let assert Error(carotte.ExchangePreconditionFailed(_)) =
     carotte.declare_exchange(
-      carotte.Exchange(..carotte.exchange("precondition_test_ex"), exchange_type: carotte.Fanout),
+      carotte.Exchange(
+        ..carotte.exchange("precondition_test_ex"),
+        exchange_type: carotte.Fanout,
+      ),
       ch2,
     )
 }
@@ -242,7 +253,8 @@ pub fn consume_channel_closed_test() {
   let assert Ok(ch) = carotte.open_channel(client)
 
   // Create a queue first
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("consume_error_queue"), ch)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("consume_error_queue"), ch)
 
   // Close the connection
   let assert Ok(Nil) = carotte.close(client)
@@ -267,7 +279,8 @@ pub fn unsubscribe_channel_closed_test() {
   let assert Ok(ch) = carotte.open_channel(client)
 
   // Create a queue
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("unsubscribe_error_queue"), ch)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("unsubscribe_error_queue"), ch)
 
   // Start the supervisor
   let consumers = process.new_name("unsubscribe_error_test_consumers")

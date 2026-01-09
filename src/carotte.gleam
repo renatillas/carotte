@@ -1338,9 +1338,7 @@ pub fn consumer_supervised(
 /// ```gleam
 /// let consumer = carotte.named_consumer(consumers_name)
 /// ```
-pub fn named_consumer(
-  name: process.Name(ConsumerSupervisorMessage),
-) -> Consumer {
+pub fn named_consumer(name: process.Name(ConsumerSupervisorMessage)) -> Consumer {
   Consumer(name)
 }
 
