@@ -75,12 +75,12 @@ pub fn main() {
 
   // Start a consumer supervisor
   let consumers = process.new_name("consumers")
-  let assert Ok(connection) = carotte.consumer_start(consumers)
+  let assert Ok(consumer) = carotte.start_consumer(consumers)
 
-  // Subscribe to messages (supervised)
-  let assert Ok(consumer) =
+  // Subscribe to messages (supervised) - returns consumer_tag string
+  let assert Ok(consumer_tag) =
     carotte.subscribe(
-      connection,
+      consumer,
       channel: ch,
       queue: "my_queue",
       callback: fn(msg, _deliver) {
@@ -90,7 +90,7 @@ pub fn main() {
     )
 
   // Clean up
-  let assert Ok(_) = carotte.unsubscribe(consumer)
+  let assert Ok(_) = carotte.unsubscribe(channel: ch, consumer_tag:)
   let assert Ok(_) = carotte.close(client)
 }
 ```
@@ -205,13 +205,13 @@ pub fn start_app() {
     |> static_supervisor.add(consumer_spec)
     |> static_supervisor.start()
 
-  // Later, get the connection reference to subscribe consumers
-  let connection = carotte.named_consumer_supervisor(consumers_name)
+  // Later, get the consumer reference to subscribe
+  let consumer = carotte.named_consumer(consumers_name)
 
-  // Subscribe to queues (consumers are supervised)
-  let assert Ok(consumer) =
+  // Subscribe to queues (consumers are supervised) - returns consumer_tag
+  let assert Ok(consumer_tag) =
     carotte.subscribe(
-      connection,
+      consumer,
       channel: ch,
       queue: "work_queue",
       callback: fn(payload, deliver) {
@@ -229,9 +229,9 @@ pub fn start_app() {
 ```gleam
 // Start supervisor directly (linked to calling process)
 let consumers = process.new_name("consumers")
-let assert Ok(connection) = carotte.consumer_start(consumers)
+let assert Ok(consumer) = carotte.start_consumer(consumers)
 
-let assert Ok(consumer) = carotte.subscribe(connection, channel: ch, queue: "my_queue", callback: handler)
+let assert Ok(consumer_tag) = carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: handler)
 ```
 
 ### Manual Acknowledgment
@@ -239,9 +239,9 @@ let assert Ok(consumer) = carotte.subscribe(connection, channel: ch, queue: "my_
 For more control over message acknowledgment:
 
 ```gleam
-let assert Ok(consumer) =
+let assert Ok(consumer_tag) =
   carotte.subscribe_with_options(
-    connection,
+    consumer,
     channel: ch,
     queue: "work_queue",
     callback: fn(msg, deliver) {
@@ -300,7 +300,7 @@ carotte.publish(
 
 ```gleam
 carotte.subscribe(
-  connection,
+  consumer,
   channel: ch,
   queue: "my_queue",
   callback: fn(payload, _deliver) {
@@ -474,13 +474,13 @@ pub fn send_task(channel, task_data) {
 }
 
 // Worker
-pub fn start_worker(channel, connection) {
+pub fn start_worker(channel, consumer) {
   let assert Ok(_) =
     carotte.QueueConfig(..carotte.queue("task_queue"), durable: True)
     |> carotte.declare_queue(channel)
 
   carotte.subscribe(
-    connection,
+    consumer,
     channel:,
     queue: "task_queue",
     callback: fn(payload, _meta) {
@@ -509,7 +509,7 @@ pub fn broadcast_event(channel, event) {
 }
 
 // Subscriber
-pub fn subscribe_to_events(channel, connection, handler) {
+pub fn subscribe_to_events(channel, consumer, handler) {
   // Create fanout exchange
   let assert Ok(_) =
     carotte.Exchange(..carotte.exchange("events"), exchange_type: carotte.Fanout)
@@ -529,9 +529,9 @@ pub fn subscribe_to_events(channel, connection, handler) {
       routing_key: ""
     )
 
-  // Subscribe
+  // Subscribe - returns consumer_tag
   carotte.subscribe(
-    connection,
+    consumer,
     channel:,
     queue: q.name,
     callback: handler
