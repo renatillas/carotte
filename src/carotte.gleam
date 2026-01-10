@@ -1,64 +1,213 @@
-import gleam/erlang/process
+//// # Carotte 🥕
+////
+//// A type-safe RabbitMQ client for Gleam that provides a clean, idiomatic interface
+//// for message queue operations on the Erlang VM.
+////
+//// ## Quick Start
+////
+//// ```gleam
+//// import carotte
+//// import gleam/bit_array
+//// import gleam/erlang/process
+//// import gleam/io
+////
+//// pub fn main() {
+////   // Connect to RabbitMQ
+////   let assert Ok(client) = carotte.start(carotte.default_client())
+////   let assert Ok(ch) = carotte.open_channel(client)
+////
+////   // Declare exchange and queue
+////   let assert Ok(_) = carotte.declare_exchange(carotte.exchange("my_exchange"), ch)
+////   let assert Ok(_) = carotte.declare_queue(carotte.queue("my_queue"), ch)
+////   let assert Ok(_) = carotte.bind_queue(channel: ch, queue: "my_queue", exchange: "my_exchange", routing_key: "")
+////
+////   // Start consumer supervisor and subscribe
+////   let consumers = process.new_name("consumers")
+////   let assert Ok(consumer) = carotte.start_consumer(consumers)
+////   let assert Ok(_) = carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: fn(msg, _) {
+////     let assert Ok(text) = bit_array.to_string(msg.payload)
+////     io.println("Received: " <> text)
+////   })
+////
+////   // Publish a message (payload is BitArray)
+////   let assert Ok(_) = carotte.publish(channel: ch, exchange: "my_exchange", routing_key: "", payload: <<"Hello!">>, options: [])
+//// }
+//// ```
+////
+//// ## Features
+////
+//// - **Type-safe API**: Leverage Gleam's type system for safe message handling
+//// - **OTP Supervision**: Integrate consumers into your application's supervision tree
+////   via `consumer_supervised`, or use standalone mode with `start_consumer`
+//// - **Operation-Specific Errors**: Granular error types (`ConnectionError`, `ChannelError`,
+////   `ExchangeError`, `QueueError`, `PublishError`, `ConsumeError`) for precise error handling
+//// - **Async Operations**: Non-blocking variants with `_async` suffix
+//// - **Full Headers Support**: Type-safe message headers with `HeaderValue` types
+//// - **Connection Helpers**: Built-in reconnection support and connection monitoring
+////
+//// ## OTP Supervision
+////
+//// For production use, integrate consumers into your supervision tree:
+////
+//// ```gleam
+//// import gleam/erlang/process
+//// import gleam/otp/static_supervisor
+////
+//// let consumers_name = process.new_name("consumers")
+//// let spec = carotte.consumer_supervised(consumers_name)
+////
+//// static_supervisor.new(static_supervisor.OneForOne)
+//// |> static_supervisor.add(spec)
+//// |> static_supervisor.start()
+////
+//// let consumer = carotte.named_consumer(consumers_name)
+//// carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: handler)
+//// ```
+////
+//// ## Error Handling
+////
+//// Each operation category has its own error type:
+////
+//// | Error Type | Operations |
+//// |------------|------------|
+//// | `ConnectionError` | `start`, `close`, `reconnect` |
+//// | `ChannelError` | `open_channel` |
+//// | `ExchangeError` | `declare_exchange`, `delete_exchange`, `bind_exchange`, `unbind_exchange` |
+//// | `QueueError` | `declare_queue`, `delete_queue`, `bind_queue`, `unbind_queue`, `purge_queue`, `queue_status` |
+//// | `PublishError` | `publish` |
+//// | `ConsumeError` | `subscribe`, `unsubscribe`, `ack` |
+////
+//// Use `describe_*_error` functions to convert errors to human-readable strings.
+////
+
+import gleam/dynamic
+import gleam/dynamic/decode
+import gleam/erlang/atom
+import gleam/erlang/process.{type Pid}
+import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/otp/actor
+import gleam/otp/factory_supervisor
+import gleam/otp/supervision
 import gleam/result
+import gleam/time/duration.{type Duration}
+import gleam/time/timestamp.{type Timestamp}
+
+// =============================================================================
+// ERROR TYPES
+// =============================================================================
+
+/// Errors that can occur when establishing or managing RabbitMQ connections.
+/// Returned by `start`, `close`, and `reconnect`.
+pub type ConnectionError {
+  /// The connection is blocked by the server due to resource constraints
+  ConnectionBlocked
+  /// The connection has been closed
+  ConnectionClosed
+  /// Authentication failed with the provided credentials
+  ConnectionAuthFailure(String)
+  /// Connection to the server was refused
+  ConnectionRefused(String)
+  /// Connection attempt timed out
+  ConnectionTimeout(String)
+  /// Connection is not currently active
+  NotConnected
+  /// Reconnection failed with the underlying cause
+  ReconnectionFailed(ConnectionError)
+  /// Connection is already established
+  AlreadyConnected
+  /// An unknown connection error occurred
+  ConnectionUnknownError(String)
+}
+
+/// Errors that can occur when opening or using channels.
+/// Returned by `open_channel`.
+pub type ChannelError {
+  /// The channel has been closed
+  ChannelClosed(String)
+  /// The channel process could not be found
+  ChannelProcessNotFound
+  /// The connection is closed, cannot open channel
+  ChannelConnectionClosed
+  /// An unknown channel error occurred
+  ChannelUnknownError(String)
+}
+
+/// Errors that can occur during exchange operations.
+/// Returned by `declare_exchange`, `delete_exchange`, `bind_exchange`, `unbind_exchange`.
+pub type ExchangeError {
+  /// The exchange was not found
+  ExchangeNotFound(String)
+  /// Access to the exchange was refused
+  ExchangeAccessRefused(String)
+  /// A precondition for the exchange operation failed
+  ExchangePreconditionFailed(String)
+  /// The channel is closed
+  ExchangeChannelClosed(String)
+  /// An unknown exchange error occurred
+  ExchangeUnknownError(String)
+}
+
+/// Errors that can occur during queue operations.
+/// Returned by `declare_queue`, `delete_queue`, `bind_queue`, `unbind_queue`, `purge_queue`, `queue_status`.
+pub type QueueError {
+  /// The queue was not found
+  QueueNotFound(String)
+  /// Access to the queue was refused
+  QueueAccessRefused(String)
+  /// A precondition for the queue operation failed
+  QueuePreconditionFailed(String)
+  /// The queue is locked and cannot be accessed
+  QueueResourceLocked(String)
+  /// The channel is closed
+  QueueChannelClosed(String)
+  /// An unknown queue error occurred
+  QueueUnknownError(String)
+}
+
+/// Errors that can occur when publishing messages.
+/// Returned by `publish`.
+pub type PublishError {
+  /// No route exists to deliver the message (when mandatory flag is set)
+  PublishNoRoute(String)
+  /// The channel is closed
+  PublishChannelClosed(String)
+  /// An unknown publish error occurred
+  PublishUnknownError(String)
+}
+
+/// Errors that can occur during consumer operations.
+/// Returned by `subscribe`, `subscribe_with_options`, `unsubscribe`, `ack`.
+pub type ConsumeError {
+  /// Consumer initialization timed out
+  ConsumeInitTimeout
+  /// Consumer initialization failed
+  ConsumeInitFailed(String)
+  /// The consumer process could not be found
+  ConsumeProcessNotFound
+  /// The channel is closed
+  ConsumeChannelClosed(String)
+  /// An unknown consume error occurred
+  ConsumeUnknownError(String)
+}
+
+// =============================================================================
+// CONNECTION TYPES
+// =============================================================================
 
 /// Represents an active connection to a RabbitMQ server.
 /// This is an opaque type that encapsulates the underlying AMQP client process.
 /// Use the builder pattern with `default_client()` and `start()` to create a client.
 pub opaque type Client {
-  Client(process.Pid)
-}
-
-/// Errors that can occur when interacting with RabbitMQ.
-pub type CarotteError {
-  /// The connection is blocked by the server due to resource constraints
-  Blocked
-  /// The connection or channel has been closed
-  Closed
-  /// Authentication failed with the provided credentials
-  AuthFailure(String)
-  /// The specified process could not be found
-  ProcessNotFound
-  /// The resource is already registered with the given name
-  AlreadyRegistered(String)
-  /// The requested resource was not found
-  NotFound(String)
-  /// Access to the resource was refused
-  AccessRefused(String)
-  /// A precondition for the operation failed
-  PreconditionFailed(String)
-  /// The resource is locked and cannot be accessed
-  ResourceLocked(String)
-  /// The channel has been closed
-  ChannelClosed(String)
-  /// Connection to the server was refused
-  ConnectionRefused(String)
-  /// Connection attempt timed out
-  ConnectionTimeout(String)
-  /// An error occurred while processing AMQP frames
-  FrameError(String)
-  /// An internal server error occurred
-  InternalError(String)
-  /// The provided path is invalid
-  InvalidPath(String)
-  /// No route exists to the specified exchange or queue
-  NoRoute(String)
-  /// The requested operation is not allowed
-  NotAllowed(String)
-  /// The requested feature is not implemented
-  NotImplemented(String)
-  /// An unexpected frame was received
-  UnexpectedFrame(String)
-  /// The AMQP command is invalid
-  CommandInvalid(String)
-  /// An unknown error occurred
-  UnknownError(String)
+  Client(pid: Pid, config: ClientConfig)
 }
 
 /// Configuration builder for creating a RabbitMQ client.
 /// Use `default_client()` to create a builder with sensible defaults,
 /// then chain the `with_*` functions to customize the configuration.
-pub opaque type Builder {
-  Builder(
+pub type ClientConfig {
+  ClientConfig(
     username: String,
     password: String,
     virtual_host: String,
@@ -66,21 +215,249 @@ pub opaque type Builder {
     port: Int,
     channel_max: Int,
     frame_max: Int,
-    heartbeat: Int,
-    connection_timeout: Int,
+    /// Heartbeat interval for the connection.
+    /// The minimum duration is one second.
+    heartbeat: Duration,
+    /// Timeout for establishing a connection.
+    connection_timeout: Duration,
   )
 }
 
+/// Connection state.
+pub type ConnectionState {
+  Connected
+  Disconnected(reason: DisconnectReason)
+}
+
+/// Reason for disconnection.
+pub type DisconnectReason {
+  /// Server closed the connection.
+  ServerClosed
+  /// Network error.
+  NetworkError
+  /// Explicitly closed by user.
+  UserClosed
+  /// Unknown reason.
+  Unknown(String)
+  /// The connection process is no longer running.
+  ConnectionProcessNotAlive
+}
+
+/// Connection event for callbacks.
+pub type ConnectionEvent {
+  ConnectionDisconnected(DisconnectReason)
+  ConnectionReconnected
+}
+
+// =============================================================================
+// CHANNEL TYPES
+// =============================================================================
+
+/// Represents an AMQP channel within a connection.
+/// Channels are lightweight connections that share a single TCP connection.
+/// Most AMQP operations are performed on channels.
+pub type Channel
+
+// =============================================================================
+// EXCHANGE TYPES
+// =============================================================================
+
+/// Represents an AMQP exchange configuration.
+/// Exchanges receive messages from producers and route them to queues
+/// based on routing rules defined by the exchange type.
+///
+/// Use `exchange()` to create an exchange with defaults, then customize
+/// using record update syntax.
+pub type Exchange {
+  Exchange(
+    name: String,
+    exchange_type: ExchangeType,
+    durable: Bool,
+    auto_delete: Bool,
+    internal: Bool,
+    nowait: Bool,
+  )
+}
+
+/// The type of routing logic an exchange uses to deliver messages to queues.
+pub type ExchangeType {
+  /// Messages are delivered to all bound queues regardless of routing key.
+  Fanout
+  /// Messages are delivered to queues with an exact routing key match.
+  Direct
+  /// Messages are delivered to queues with pattern-matching on routing key.
+  /// Supports wildcards: `*` matches one word, `#` matches zero or more words.
+  Topic
+  /// Messages are routed based on header attributes rather than routing key.
+  Headers
+}
+
+// =============================================================================
+// QUEUE TYPES
+// =============================================================================
+
+/// Configuration for declaring a queue.
+/// Use `queue()` to create a queue with sensible defaults,
+/// then customize using record update syntax.
+pub type QueueConfig {
+  QueueConfig(
+    name: String,
+    passive: Bool,
+    durable: Bool,
+    exclusive: Bool,
+    auto_delete: Bool,
+    nowait: Bool,
+  )
+}
+
+/// Represents a declared queue on the broker.
+/// Returned by `declare_queue()` and `queue_status()` with current statistics.
+pub type Queue {
+  /// The declared queue with its name, current message count, and consumer count.
+  Queue(name: String, message_count: Int, consumer_count: Int)
+}
+
+/// Metadata about a message delivery from the broker.
+/// Contains information about how and from where the message was delivered.
+pub type Deliver {
+  Deliver(
+    /// Identifier for the consumer that received this message.
+    consumer_tag: String,
+    /// Unique identifier for this delivery, used for acknowledgment.
+    delivery_tag: Int,
+    /// True if this message was previously delivered but not acknowledged.
+    redelivered: Bool,
+    /// The exchange the message was published to.
+    exchange: String,
+    /// The routing key used when the message was published.
+    routing_key: String,
+  )
+}
+
+/// A message payload received from the broker.
+/// Contains the message body, AMQP properties, and custom headers.
+pub type Payload {
+  Payload(
+    /// The message body as raw bytes
+    payload: BitArray,
+    /// AMQP message properties (content type, correlation ID, etc.)
+    properties: List(PublishOption),
+    /// Custom headers attached to the message
+    headers: HeaderList,
+  )
+}
+
+/// Options for subscribing to a queue.
+pub type QueueOption {
+  /// If True, messages are automatically acknowledged upon delivery.
+  /// If False, you must call `ack()` to acknowledge messages manually.
+  AutoAck(Bool)
+}
+
+// =============================================================================
+// PUBLISHER TYPES
+// =============================================================================
+
+/// An opaque container for message headers.
+/// Headers are key-value pairs that can be attached to messages for
+/// additional metadata or routing with header exchanges.
+///
+/// Create with `headers_from_list()` and read with `headers_to_list()`.
+pub opaque type HeaderList {
+  HeaderList(List(#(String, atom.Atom, dynamic.Dynamic)))
+}
+
+/// Represents a typed header value.
+/// AMQP headers support several primitive types.
+pub type HeaderValue {
+  /// A boolean header value.
+  BoolHeader(Bool)
+  /// A floating-point header value.
+  FloatHeader(Float)
+  /// An integer header value.
+  IntHeader(Int)
+  /// A string header value.
+  StringHeader(String)
+  /// A list of header values (nested).
+  ListHeader(List(HeaderValue))
+}
+
+/// Options for publishing messages.
+pub type PublishOption {
+  /// If set, returns an error if the broker can't route the message to a queue.
+  Mandatory(Bool)
+  /// MIME content type.
+  ContentType(String)
+  /// MIME content encoding.
+  ContentEncoding(String)
+  /// Headers to attach to the message. Use `headers_from_list` to create headers
+  /// for sending, and `headers_to_list` to read headers from received messages.
+  MessageHeaders(HeaderList)
+  /// If set, uses persistent delivery mode.
+  /// Messages marked as persistent that are delivered to durable queues will be logged to disk.
+  Persistent(Bool)
+  /// Arbitrary application-specific message identifier.
+  CorrelationId(String)
+  /// Message priority, ranging from 0 to 9.
+  Priority(Int)
+  /// Name of the reply queue.
+  ReplyTo(String)
+  /// How long the message is valid before it expires.
+  Expiration(Duration)
+  /// Message identifier.
+  MessageId(String)
+  /// Timestamp associated with this message.
+  /// Note: AMQP only supports second-level precision, so any nanoseconds
+  /// in the timestamp will be truncated when sending.
+  Timestamp(Timestamp)
+  /// Message type.
+  Type(String)
+  /// Creating user ID. RabbitMQ will validate this against the active connection user.
+  UserId(String)
+  /// Application ID.
+  AppId(String)
+}
+
+// =============================================================================
+// SUPERVISOR TYPES
+// =============================================================================
+
+/// Configuration for a consumer.
+pub opaque type ConsumerConfig {
+  ConsumerConfig(
+    channel: Channel,
+    queue: String,
+    auto_ack: Bool,
+    callback: fn(Payload, Deliver) -> Nil,
+  )
+}
+
+/// Opaque reference to a consumer supervisor.
+///
+/// Similar to how pog's Connection wraps a pool reference, this type
+/// wraps the consumer supervisor name. Use it to subscribe to queues.
+///
+/// - Use `start_consumer` or `named_consumer` to get a Consumer
+/// - Use `subscribe` with a Consumer to start consuming (returns consumer_tag)
+/// - Use `unsubscribe` with channel + consumer_tag to stop consuming
+pub opaque type Consumer {
+  Consumer(name: process.Name(ConsumerSupervisorMessage))
+}
+
+// =============================================================================
+// CONNECTION FUNCTIONS
+// =============================================================================
+
 /// Create a new client builder with default settings.
 /// Uses guest/guest credentials on localhost:5672.
-/// 
+///
 /// ## Example
 /// ```gleam
 /// let client = carotte.default_client()
 ///   |> carotte.start()
 /// ```
-pub fn default_client() -> Builder {
-  Builder(
+pub fn default_client() -> ClientConfig {
+  ClientConfig(
     username: "guest",
     password: "guest",
     virtual_host: "/",
@@ -88,70 +465,34 @@ pub fn default_client() -> Builder {
     port: 5672,
     channel_max: 2074,
     frame_max: 0,
-    heartbeat: 10,
-    connection_timeout: 60_000,
+    heartbeat: duration.seconds(10),
+    connection_timeout: duration.seconds(60),
   )
-}
-
-/// Set the username for authentication
-pub fn with_username(builder: Builder, username: String) -> Builder {
-  Builder(..builder, username:)
-}
-
-/// Set the password for authentication
-pub fn with_password(builder: Builder, password: String) -> Builder {
-  Builder(..builder, password:)
-}
-
-/// Set the virtual host to connect to
-pub fn with_virtual_host(builder: Builder, virtual_host: String) -> Builder {
-  Builder(..builder, virtual_host:)
-}
-
-/// Set the hostname or IP address of the RabbitMQ server
-pub fn with_host(builder: Builder, host: String) -> Builder {
-  Builder(..builder, host:)
-}
-
-/// Set the port number for the RabbitMQ server (default: 5672)
-pub fn with_port(builder: Builder, port: Int) -> Builder {
-  Builder(..builder, port:)
-}
-
-/// Set the maximum number of channels (default: 2074)
-pub fn with_channel_max(builder: Builder, channel_max: Int) -> Builder {
-  Builder(..builder, channel_max:)
-}
-
-/// Set the maximum frame size in bytes (0 = no limit)
-pub fn with_frame_max(builder: Builder, frame_max: Int) -> Builder {
-  Builder(..builder, frame_max:)
-}
-
-/// Set the heartbeat interval in seconds (default: 10)
-pub fn with_heartbeat(builder: Builder, heartbeat: Int) -> Builder {
-  Builder(..builder, heartbeat:)
-}
-
-/// Set the connection timeout in milliseconds (default: 60000)
-pub fn with_connection_timeout(
-  builder: Builder,
-  connection_timeout: Int,
-) -> Builder {
-  Builder(..builder, connection_timeout:)
 }
 
 /// Start a RabbitMQ client connection.
 /// Returns an actor.StartResult which contains the client on success.
-/// 
+///
 /// ## Example
 /// ```gleam
 /// case carotte.start(builder) {
 ///   Ok(client) -> // Use the client
-///   Error(carotte_error) -> // Handle connection error
+///   Error(connection_error) -> // Handle connection error
 /// }
 /// ```
-pub fn start(builder: Builder) -> Result(Client, CarotteError) {
+pub fn start(builder: ClientConfig) -> Result(Client, ConnectionError) {
+  // Convert Duration to seconds for heartbeat
+  let #(heartbeat_secs, heartbeat_nanoseconds) =
+    duration.to_seconds_and_nanoseconds(builder.heartbeat)
+  let heartbeat_secs = case heartbeat_nanoseconds > 0 {
+    True -> heartbeat_secs + 1
+    False -> heartbeat_secs
+  }
+  // Convert Duration to milliseconds for connection_timeout
+  let #(timeout_secs, timeout_nanos) =
+    duration.to_seconds_and_nanoseconds(builder.connection_timeout)
+  let timeout_ms = timeout_secs * 1000 + timeout_nanos / 1_000_000
+
   use pid <- result.map(do_start(
     builder.username,
     builder.password,
@@ -160,10 +501,10 @@ pub fn start(builder: Builder) -> Result(Client, CarotteError) {
     builder.port,
     builder.channel_max,
     builder.frame_max,
-    builder.heartbeat,
-    builder.connection_timeout,
+    heartbeat_secs,
+    timeout_ms,
   ))
-  Client(pid)
+  Client(pid:, config: builder)
 }
 
 @external(erlang, "carotte_ffi", "start")
@@ -177,13 +518,1184 @@ fn do_start(
   frame_max: Int,
   heartbeat: Int,
   connection_timeout: Int,
-) -> Result(process.Pid, CarotteError)
+) -> Result(Pid, ConnectionError)
 
 /// Close the RabbitMQ client connection.
 /// This will close all channels and the underlying AMQP connection.
-pub fn close(client: Client) -> Result(Nil, CarotteError) {
+pub fn close(client: Client) -> Result(Nil, ConnectionError) {
   do_close(client)
 }
 
 @external(erlang, "carotte_ffi", "close")
-fn do_close(client: Client) -> Result(Nil, CarotteError)
+fn do_close(client: Client) -> Result(Nil, ConnectionError)
+
+/// Check if the client connection is currently active.
+pub fn is_connected(client: Client) -> Bool {
+  do_is_process_alive(client)
+}
+
+@external(erlang, "carotte_ffi", "is_process_alive")
+fn do_is_process_alive(client: Client) -> Bool
+
+/// Get the current connection state.
+pub fn connection_state(client: Client) -> ConnectionState {
+  case is_connected(client) {
+    True -> Connected
+    False -> Disconnected(reason: ConnectionProcessNotAlive)
+  }
+}
+
+/// Attempt to reconnect a disconnected client.
+/// Uses the original connection parameters.
+/// Returns error if already connected or reconnection fails.
+pub fn reconnect(client: Client) -> Result(Client, ConnectionError) {
+  case is_connected(client) {
+    True -> Error(AlreadyConnected)
+    False -> {
+      let builder = client.config
+      // Convert Duration to seconds for heartbeat
+      let #(heartbeat_secs, heartbeat_nanoseconds) =
+        duration.to_seconds_and_nanoseconds(builder.heartbeat)
+      let heartbeat_secs = case heartbeat_nanoseconds > 0 {
+        True -> heartbeat_secs + 1
+        False -> heartbeat_secs
+      }
+      // Convert Duration to milliseconds for connection_timeout
+      let #(timeout_secs, timeout_nanos) =
+        duration.to_seconds_and_nanoseconds(builder.connection_timeout)
+      let timeout_ms = timeout_secs * 1000 + timeout_nanos / 1_000_000
+
+      case
+        do_start(
+          builder.username,
+          builder.password,
+          builder.virtual_host,
+          builder.host,
+          builder.port,
+          builder.channel_max,
+          builder.frame_max,
+          heartbeat_secs,
+          timeout_ms,
+        )
+      {
+        Ok(pid) -> Ok(Client(pid:, config: builder))
+        Error(e) -> Error(ReconnectionFailed(e))
+      }
+    }
+  }
+}
+
+/// Convert a ConnectionError to a human-readable string description.
+/// Useful for logging or displaying error messages to users.
+pub fn describe_connection_error(err: ConnectionError) -> String {
+  case err {
+    ConnectionBlocked -> "Connection blocked"
+    ConnectionClosed -> "Connection closed"
+    ConnectionAuthFailure(msg) -> "Auth failure: " <> msg
+    ConnectionRefused(msg) -> "Connection refused: " <> msg
+    ConnectionTimeout(msg) -> "Connection timeout: " <> msg
+    NotConnected -> "Not connected"
+    ReconnectionFailed(cause) ->
+      "Reconnection failed: " <> describe_connection_error(cause)
+    AlreadyConnected -> "Already connected"
+    ConnectionUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+/// Convert a ChannelError to a human-readable string description.
+pub fn describe_channel_error(err: ChannelError) -> String {
+  case err {
+    ChannelClosed(msg) -> "Channel closed: " <> msg
+    ChannelProcessNotFound -> "Channel process not found"
+    ChannelConnectionClosed -> "Connection closed"
+    ChannelUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+/// Convert an ExchangeError to a human-readable string description.
+pub fn describe_exchange_error(err: ExchangeError) -> String {
+  case err {
+    ExchangeNotFound(msg) -> "Exchange not found: " <> msg
+    ExchangeAccessRefused(msg) -> "Access refused: " <> msg
+    ExchangePreconditionFailed(msg) -> "Precondition failed: " <> msg
+    ExchangeChannelClosed(msg) -> "Channel closed: " <> msg
+    ExchangeUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+/// Convert a QueueError to a human-readable string description.
+pub fn describe_queue_error(err: QueueError) -> String {
+  case err {
+    QueueNotFound(msg) -> "Queue not found: " <> msg
+    QueueAccessRefused(msg) -> "Access refused: " <> msg
+    QueuePreconditionFailed(msg) -> "Precondition failed: " <> msg
+    QueueResourceLocked(msg) -> "Resource locked: " <> msg
+    QueueChannelClosed(msg) -> "Channel closed: " <> msg
+    QueueUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+/// Convert a PublishError to a human-readable string description.
+pub fn describe_publish_error(err: PublishError) -> String {
+  case err {
+    PublishNoRoute(msg) -> "No route: " <> msg
+    PublishChannelClosed(msg) -> "Channel closed: " <> msg
+    PublishUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+/// Convert a ConsumeError to a human-readable string description.
+pub fn describe_consume_error(err: ConsumeError) -> String {
+  case err {
+    ConsumeInitTimeout -> "Consumer init timeout"
+    ConsumeInitFailed(msg) -> "Consumer init failed: " <> msg
+    ConsumeProcessNotFound -> "Consumer process not found"
+    ConsumeChannelClosed(msg) -> "Channel closed: " <> msg
+    ConsumeUnknownError(msg) -> "Unknown error: " <> msg
+  }
+}
+
+// =============================================================================
+// CHANNEL FUNCTIONS
+// =============================================================================
+
+/// Open a channel to a RabbitMQ server.
+pub fn open_channel(client: Client) -> Result(Channel, ChannelError) {
+  do_open_channel(client)
+}
+
+@external(erlang, "carotte_ffi", "open_channel")
+fn do_open_channel(carotte_client: Client) -> Result(Channel, ChannelError)
+
+// =============================================================================
+// EXCHANGE FUNCTIONS
+// =============================================================================
+
+/// Create an exchange with the given name and sensible defaults.
+/// Returns a Direct exchange with all options set to False.
+///
+/// To customize, use record update syntax:
+/// ```gleam
+/// Exchange(..exchange("events"), exchange_type: Topic, durable: True)
+/// ```
+pub fn exchange(name: String) -> Exchange {
+  Exchange(
+    name:,
+    exchange_type: Direct,
+    durable: False,
+    auto_delete: False,
+    internal: False,
+    nowait: False,
+  )
+}
+
+/// Declare an exchange on the broker.
+pub fn declare_exchange(
+  exchange: Exchange,
+  channel: Channel,
+) -> Result(Nil, ExchangeError) {
+  do_declare_exchange(channel, exchange)
+}
+
+/// Declare an exchange on the broker without waiting for a response.
+pub fn declare_exchange_async(
+  exchange: Exchange,
+  channel: Channel,
+) -> Result(Nil, ExchangeError) {
+  do_declare_exchange(channel, Exchange(..exchange, nowait: True))
+}
+
+@external(erlang, "carotte_ffi", "exchange_declare")
+fn do_declare_exchange(
+  channel: Channel,
+  exchange: Exchange,
+) -> Result(Nil, ExchangeError)
+
+/// Delete an exchange from the broker.
+/// If `unused` is set to true, the exchange will only be deleted if it has no queues bound to it.
+pub fn delete_exchange(
+  channel channel: Channel,
+  exchange exchange: String,
+  if_unused unused: Bool,
+) -> Result(Nil, ExchangeError) {
+  do_delete_exchange(channel, exchange, unused, False)
+}
+
+/// Delete an exchange from the broker without waiting for a response.
+pub fn delete_exchange_async(
+  channel channel: Channel,
+  exchange exchange: String,
+  if_unused unused: Bool,
+) -> Result(Nil, ExchangeError) {
+  do_delete_exchange(channel, exchange, unused, True)
+}
+
+@external(erlang, "carotte_ffi", "exchange_delete")
+fn do_delete_exchange(
+  channel: Channel,
+  exchange: String,
+  if_unused: Bool,
+  nowait: Bool,
+) -> Result(Nil, ExchangeError)
+
+/// Bind an exchange to another exchange.
+/// Routing keys are used to filter messages from the source exchange.
+pub fn bind_exchange(
+  channel channel: Channel,
+  source source: String,
+  destination destination: String,
+  routing_key routing_key: String,
+) -> Result(Nil, ExchangeError) {
+  do_bind_exchange(channel, source, destination, routing_key, False)
+}
+
+/// Bind an exchange to another exchange without waiting for a response.
+/// Same semantics as `bind_exchange`.
+pub fn bind_exchange_async(
+  channel channel: Channel,
+  source source: String,
+  destination destination: String,
+  routing_key routing_key: String,
+) -> Result(Nil, ExchangeError) {
+  do_bind_exchange(channel, source, destination, routing_key, True)
+}
+
+@external(erlang, "carotte_ffi", "exchange_bind")
+fn do_bind_exchange(
+  channel: Channel,
+  source: String,
+  destination: String,
+  routing_key: String,
+  nowait: Bool,
+) -> Result(Nil, ExchangeError)
+
+/// Unbind an exchange from another exchange.
+pub fn unbind_exchange(
+  channel channel: Channel,
+  source source: String,
+  destination destination: String,
+  routing_key routing_key: String,
+) -> Result(Nil, ExchangeError) {
+  do_unbind_exchange(channel, source, destination, routing_key, False)
+}
+
+/// Unbind an exchange from another exchange asynchronously.
+/// Same semantics as `unbind_exchange`.
+pub fn unbind_exchange_async(
+  channel channel: Channel,
+  source source: String,
+  destination destination: String,
+  routing_key routing_key: String,
+) -> Result(Nil, ExchangeError) {
+  do_unbind_exchange(channel, source, destination, routing_key, True)
+}
+
+@external(erlang, "carotte_ffi", "exchange_unbind")
+fn do_unbind_exchange(
+  channel: Channel,
+  source: String,
+  destination: String,
+  routing_key: String,
+  nowait: Bool,
+) -> Result(Nil, ExchangeError)
+
+// =============================================================================
+// QUEUE FUNCTIONS
+// =============================================================================
+
+/// Create a queue configuration with the given name and sensible defaults.
+/// All boolean options default to False.
+///
+/// To customize, use record update syntax:
+/// ```gleam
+/// QueueConfig(..default_queue("my_queue"), durable: True, exclusive: True)
+/// ```
+///
+/// For an auto-generated queue name, pass an empty string:
+/// ```gleam
+/// default_queue("")
+/// |> declare_queue(channel)
+/// // Returns Queue with broker-generated name like "amq.gen-..."
+/// ```
+pub fn default_queue(name: String) -> QueueConfig {
+  QueueConfig(
+    name:,
+    passive: False,
+    durable: False,
+    exclusive: False,
+    auto_delete: False,
+    nowait: False,
+  )
+}
+
+/// Declare a queue on the broker.
+pub fn declare_queue(
+  queue: QueueConfig,
+  channel: Channel,
+) -> Result(Queue, QueueError) {
+  do_declare_queue(
+    channel,
+    queue.name,
+    queue.passive,
+    queue.durable,
+    queue.exclusive,
+    queue.auto_delete,
+    queue.nowait,
+  )
+}
+
+@external(erlang, "carotte_ffi", "queue_declare")
+fn do_declare_queue(
+  channel: Channel,
+  queue: String,
+  passive: Bool,
+  durable: Bool,
+  exclusive: Bool,
+  auto_delete: Bool,
+  nowait: Bool,
+) -> Result(Queue, QueueError)
+
+/// Declare a queue on the broker asynchronously.
+pub fn declare_queue_async(
+  queue: QueueConfig,
+  channel: Channel,
+) -> Result(Nil, QueueError) {
+  do_declare_queue_async(
+    channel,
+    queue.name,
+    queue.passive,
+    queue.durable,
+    queue.exclusive,
+    queue.auto_delete,
+    True,
+  )
+}
+
+@external(erlang, "carotte_ffi", "queue_declare")
+fn do_declare_queue_async(
+  channel: Channel,
+  queue: String,
+  passive: Bool,
+  durable: Bool,
+  exclusive: Bool,
+  auto_delete: Bool,
+  nowait: Bool,
+) -> Result(Nil, QueueError)
+
+/// Delete a queue from the broker.
+/// If `if_unused` is set, the queue will only be deleted if it has no subscribers.
+/// If `if_empty` is set, the queue will only be deleted if it has no messages.
+/// Returns the number of messages that were in the queue when it was deleted.
+pub fn delete_queue(
+  channel channel: Channel,
+  queue queue: String,
+  if_unused if_unused: Bool,
+  if_empty if_empty: Bool,
+) -> Result(Int, QueueError) {
+  do_delete_queue(channel, queue, if_unused, if_empty, False)
+}
+
+/// Delete a queue from the broker asynchronously.
+/// Same semantics as `delete_queue`.
+pub fn delete_queue_async(
+  channel channel: Channel,
+  queue queue: String,
+  if_unused if_unused: Bool,
+  if_empty if_empty: Bool,
+) -> Result(Nil, QueueError) {
+  use _ <- result.map(do_delete_queue(channel, queue, if_unused, if_empty, True))
+  Nil
+}
+
+@external(erlang, "carotte_ffi", "queue_delete")
+fn do_delete_queue(
+  channel: Channel,
+  queue: String,
+  if_unused: Bool,
+  if_empty: Bool,
+  nowait: Bool,
+) -> Result(Int, QueueError)
+
+/// Bind a queue to an exchange.
+/// The `routing_key` is used to filter messages from the exchange.
+pub fn bind_queue(
+  channel channel: Channel,
+  queue queue: String,
+  exchange exchange: String,
+  routing_key routing_key: String,
+) -> Result(Nil, QueueError) {
+  do_bind_queue(channel, queue, exchange, routing_key, False)
+}
+
+/// Bind a queue to an exchange asynchronously.
+/// Same semantics as `bind_queue`.
+pub fn bind_queue_async(
+  channel channel: Channel,
+  queue queue: String,
+  exchange exchange: String,
+  routing_key routing_key: String,
+) -> Result(Nil, QueueError) {
+  do_bind_queue(channel, queue, exchange, routing_key, True)
+}
+
+@external(erlang, "carotte_ffi", "queue_bind")
+fn do_bind_queue(
+  channel: Channel,
+  queue: String,
+  exchange: String,
+  routing_key: String,
+  nowait: Bool,
+) -> Result(Nil, QueueError)
+
+/// Unbind a queue from an exchange.
+/// The `routing_key` is used to filter messages from the exchange.
+pub fn unbind_queue(
+  channel channel: Channel,
+  queue queue: String,
+  exchange exchange: String,
+  routing_key routing_key: String,
+) -> Result(Nil, QueueError) {
+  do_unbind_queue(channel, queue, exchange, routing_key)
+}
+
+@external(erlang, "carotte_ffi", "queue_unbind")
+fn do_unbind_queue(
+  channel: Channel,
+  queue: String,
+  exchange: String,
+  routing_key: String,
+) -> Result(Nil, QueueError)
+
+/// Purge a queue of all messages.
+pub fn purge_queue(
+  channel channel: Channel,
+  queue queue: String,
+) -> Result(Int, QueueError) {
+  do_purge_queue(channel, queue, False)
+}
+
+/// Purge a queue of all messages asynchronously.
+pub fn purge_queue_async(
+  channel channel: Channel,
+  queue queue: String,
+) -> Result(Nil, QueueError) {
+  use _ <- result.map(do_purge_queue(channel, queue, True))
+  Nil
+}
+
+@external(erlang, "carotte_ffi", "queue_purge")
+fn do_purge_queue(
+  channel: Channel,
+  queue: String,
+  nowait: Bool,
+) -> Result(Int, QueueError)
+
+/// Get the status of a queue.
+pub fn queue_status(
+  channel channel: Channel,
+  queue queue: String,
+) -> Result(Queue, QueueError) {
+  do_declare_queue(channel, queue, True, False, False, False, False)
+}
+
+// =============================================================================
+// PUBLISHER FUNCTIONS
+// =============================================================================
+
+fn header_value_to_header_tuple(
+  value: HeaderValue,
+) -> #(atom.Atom, dynamic.Dynamic) {
+  case value {
+    BoolHeader(inner) -> #(atom.create("bool"), to_dynamic(inner))
+    FloatHeader(inner) -> #(atom.create("float"), to_dynamic(inner))
+    IntHeader(inner) -> #(atom.create("long"), to_dynamic(inner))
+    StringHeader(inner) -> #(atom.create("longstr"), to_dynamic(inner))
+    ListHeader(inner) -> {
+      let mapped = list.map(inner, header_value_to_header_tuple) |> to_dynamic
+      #(atom.create("array"), mapped)
+    }
+  }
+}
+
+/// Create an empty HeaderList.
+/// Useful for pattern matching or when no headers are needed.
+pub fn empty_headers() -> HeaderList {
+  HeaderList([])
+}
+
+/// Create a HeaderList from a list of name-value pairs.
+/// Use this to construct headers for messages.
+///
+/// ## Example
+/// ```gleam
+/// let headers = headers_from_list([
+///   #("user_id", StringHeader("123")),
+///   #("retry_count", IntHeader(3)),
+///   #("is_test", BoolHeader(True)),
+/// ])
+/// ```
+pub fn headers_from_list(list: List(#(String, HeaderValue))) -> HeaderList {
+  list
+  |> list.map(fn(item) {
+    let #(name, value) = item
+    let #(type_atom, value) = header_value_to_header_tuple(value)
+    #(name, type_atom, value)
+  })
+  |> HeaderList
+}
+
+/// Convert a HeaderList back to a list of name-value pairs.
+/// Use this to read headers from received messages.
+///
+/// ## Example
+/// ```gleam
+/// case carotte.subscribe(supervisor, channel, "my_queue", fn(payload, _deliver) {
+///   let headers = carotte.headers_to_list(payload.headers)
+///   // headers: List(#(String, HeaderValue))
+/// })
+/// ```
+pub fn headers_to_list(headers: HeaderList) -> List(#(String, HeaderValue)) {
+  let HeaderList(raw_headers) = headers
+  raw_headers
+  |> list.filter_map(fn(header) {
+    let #(name, type_atom, value) = header
+    // Build a tuple {type_atom, value} to decode as HeaderValue
+    let typed_value = to_dynamic(#(type_atom, value))
+    case decode.run(typed_value, header_value_decoder()) {
+      Ok(header_value) -> Ok(#(name, header_value))
+      Error(_) -> Error(Nil)
+    }
+  })
+}
+
+/// Decoder for a single HeaderValue from AMQP {Type, Value} tuple format
+fn header_value_decoder() -> decode.Decoder(HeaderValue) {
+  use type_atom <- decode.field(0, atom.decoder())
+  use value <- decode.field(1, decode.dynamic)
+  let type_name = atom.to_string(type_atom)
+
+  case type_name {
+    "bool" ->
+      case decode.run(value, decode.bool) {
+        Ok(b) -> decode.success(BoolHeader(b))
+        Error(_) -> decode.failure(BoolHeader(False), "Expected bool")
+      }
+    "long" ->
+      case decode.run(value, decode.int) {
+        Ok(i) -> decode.success(IntHeader(i))
+        Error(_) -> decode.failure(IntHeader(0), "Expected int")
+      }
+    "float" ->
+      case decode.run(value, decode.float) {
+        Ok(f) -> decode.success(FloatHeader(f))
+        Error(_) -> decode.failure(FloatHeader(0.0), "Expected float")
+      }
+    "longstr" ->
+      case decode.run(value, decode.string) {
+        Ok(s) -> decode.success(StringHeader(s))
+        Error(_) -> decode.failure(StringHeader(""), "Expected string")
+      }
+    "array" ->
+      case decode.run(value, header_array_decoder()) {
+        Ok(list_header) -> decode.success(list_header)
+        Error(_) -> decode.failure(ListHeader([]), "Expected array")
+      }
+    _ -> decode.failure(BoolHeader(False), "Unknown header type: " <> type_name)
+  }
+}
+
+/// Decoder for AMQP header arrays (list of {Type, Value} tuples)
+fn header_array_decoder() -> decode.Decoder(HeaderValue) {
+  decode.list(header_value_decoder())
+  |> decode.map(ListHeader)
+}
+
+/// Publish a message to an exchange.
+/// The `routing_key` is used to route messages to queues.
+/// The `options` are used to set message properties.
+pub fn publish(
+  channel channel: Channel,
+  exchange exchange: String,
+  routing_key routing_key: String,
+  payload payload: BitArray,
+  options options: List(PublishOption),
+) -> Result(Nil, PublishError) {
+  let ffi_options = list.map(options, publish_option_to_tuple)
+  do_publish(channel, exchange, routing_key, payload, ffi_options)
+}
+
+/// Opaque type for FFI option tuples - uses identity function for zero-cost casting
+type FfiOption
+
+@external(erlang, "gleam@function", "identity")
+fn to_ffi_option(value: a) -> FfiOption
+
+/// Convert a PublishOption to a list of FFI tuples (atom, value)
+/// Returns a list because some options may be skipped
+fn publish_option_to_tuple(option: PublishOption) -> FfiOption {
+  case option {
+    Mandatory(v) -> #(atom.create("mandatory_ffi"), v) |> to_ffi_option
+    ContentType(v) -> #(atom.create("content_type_ffi"), v) |> to_ffi_option
+    ContentEncoding(v) ->
+      #(atom.create("content_encoding_ffi"), v) |> to_ffi_option
+    MessageHeaders(HeaderList(v)) ->
+      #(atom.create("message_headers_ffi"), v) |> to_ffi_option
+    Persistent(v) -> #(atom.create("persistent_ffi"), v) |> to_ffi_option
+    CorrelationId(v) -> #(atom.create("correlation_id_ffi"), v) |> to_ffi_option
+    Priority(v) -> #(atom.create("priority_ffi"), v) |> to_ffi_option
+    ReplyTo(v) -> #(atom.create("reply_to_ffi"), v) |> to_ffi_option
+    Expiration(dur) -> {
+      let #(seconds, nanos) = duration.to_seconds_and_nanoseconds(dur)
+      let millis = seconds * 1000 + nanos / 1_000_000
+      #(atom.create("expiration_ffi"), int.to_string(millis)) |> to_ffi_option
+    }
+    MessageId(v) -> #(atom.create("message_id_ffi"), v) |> to_ffi_option
+    Timestamp(ts) -> {
+      let #(epoch_secs, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+      #(atom.create("timestamp_ffi"), epoch_secs) |> to_ffi_option
+    }
+    Type(v) -> #(atom.create("type_ffi"), v) |> to_ffi_option
+    UserId(v) -> #(atom.create("user_id_ffi"), v) |> to_ffi_option
+    AppId(v) -> #(atom.create("app_id_ffi"), v) |> to_ffi_option
+  }
+}
+
+@external(erlang, "carotte_ffi", "publish")
+fn do_publish(
+  channel: Channel,
+  exchange: String,
+  routing_key: String,
+  payload: BitArray,
+  publish_options: List(FfiOption),
+) -> Result(Nil, PublishError)
+
+// =============================================================================
+// CONSUMER SUPERVISOR FUNCTIONS
+// =============================================================================
+
+/// The message type for the consumer supervisor.
+/// Used when registering with a name.
+pub type ConsumerSupervisorMessage =
+  factory_supervisor.Message(ConsumerConfig, String)
+
+/// Start the consumer supervisor directly without adding it to a supervision tree.
+///
+/// Most of the time you want to use `consumer_supervised` and add the
+/// supervisor to your application's supervision tree instead of using this
+/// function directly.
+///
+/// The supervisor will be linked to the calling process and registered with
+/// the given name.
+///
+/// ## Example
+///
+/// ```gleam
+/// let name = process.new_name("my_consumers")
+/// let assert Ok(consumer) = carotte.start_consumer(name)
+/// ```
+pub fn start_consumer(
+  name: process.Name(ConsumerSupervisorMessage),
+) -> Result(Consumer, actor.StartError) {
+  factory_supervisor.worker_child(start_consumer_actor)
+  |> factory_supervisor.named(name)
+  |> factory_supervisor.start
+  |> result.map(fn(_) { Consumer(name) })
+}
+
+/// Create a child specification for adding the consumer supervisor to your
+/// application's supervision tree.
+///
+/// This is the recommended way to start the consumer supervisor, as it ensures
+/// proper lifecycle management within your OTP application.
+///
+/// You must provide a name so that other parts of your application can
+/// find the supervisor to subscribe consumers.
+///
+/// ## Example
+///
+/// ```gleam
+/// import gleam/erlang/process
+/// import gleam/otp/static_supervisor
+///
+/// pub fn start_app() {
+///   // Create a name at program startup
+///   let consumers_name = process.new_name("consumers")
+///
+///   // Create the child specification (max 5 restarts in 10 seconds)
+///   let consumer_spec = carotte.consumer_supervised(consumers_name)
+///
+///   // Add to your supervision tree
+///   static_supervisor.new(static_supervisor.OneForOne)
+///   |> static_supervisor.add(consumer_spec)
+///   |> static_supervisor.start()
+///
+///   // Later, get the supervisor to subscribe
+///   let sup = carotte.named_consumer(consumers_name)
+///   carotte.subscribe(sup, channel: ch, queue: "my_queue", callback: handler)
+/// }
+/// ```
+pub fn consumer_supervised(
+  name: process.Name(ConsumerSupervisorMessage),
+) -> supervision.ChildSpecification(
+  factory_supervisor.Supervisor(ConsumerConfig, String),
+) {
+  factory_supervisor.worker_child(start_consumer_actor)
+  |> factory_supervisor.named(name)
+  |> factory_supervisor.supervised
+}
+
+/// Get a reference to a running consumer supervisor by its registered name.
+///
+/// Use this to get a supervisor reference after it has been started as part
+/// of your supervision tree via `consumer_supervised`.
+///
+/// ## Example
+///
+/// ```gleam
+/// let consumer = carotte.named_consumer(consumers_name)
+/// ```
+pub fn named_consumer(name: process.Name(ConsumerSupervisorMessage)) -> Consumer {
+  Consumer(name)
+}
+
+/// Start a consumer under supervision.
+/// Returns the consumer_tag string which can be used to unsubscribe later.
+pub fn subscribe(
+  consumer: Consumer,
+  channel channel: Channel,
+  queue queue: String,
+  callback callback: fn(Payload, Deliver) -> Nil,
+) -> Result(String, ConsumeError) {
+  let Consumer(name) = consumer
+  let config = ConsumerConfig(channel:, queue:, auto_ack: True, callback:)
+  let supervisor = factory_supervisor.get_by_name(name)
+
+  factory_supervisor.start_child(supervisor, config)
+  |> result.map(fn(started) { started.data })
+  |> result.map_error(fn(e) {
+    case e {
+      actor.InitTimeout -> ConsumeInitTimeout
+      actor.InitFailed(msg) -> ConsumeInitFailed(msg)
+      actor.InitExited(_) -> ConsumeInitFailed("Consumer init exited")
+    }
+  })
+}
+
+/// Start a consumer with options under supervision.
+/// Returns the consumer_tag string which can be used to unsubscribe later.
+pub fn subscribe_with_options(
+  consumer: Consumer,
+  channel channel: Channel,
+  queue queue: String,
+  options options: List(QueueOption),
+  callback callback: fn(Payload, Deliver) -> Nil,
+) -> Result(String, ConsumeError) {
+  let Consumer(name) = consumer
+  let auto_ack = case options {
+    [] -> True
+    [AutoAck(ack), ..] -> ack
+  }
+  let config = ConsumerConfig(channel:, queue:, auto_ack:, callback:)
+  let supervisor = factory_supervisor.get_by_name(name)
+
+  factory_supervisor.start_child(supervisor, config)
+  |> result.map(fn(started) { started.data })
+  |> result.map_error(fn(e) {
+    case e {
+      actor.InitTimeout -> ConsumeInitTimeout
+      actor.InitFailed(msg) -> ConsumeInitFailed(msg)
+      actor.InitExited(_) -> ConsumeInitFailed("Consumer init exited")
+    }
+  })
+}
+
+/// Unsubscribe and stop a consumer gracefully.
+pub fn unsubscribe(
+  channel channel: Channel,
+  consumer_tag consumer_tag: String,
+) -> Result(Nil, ConsumeError) {
+  do_unsubscribe(channel, consumer_tag, False)
+}
+
+/// Unsubscribe a consumer asynchronously.
+pub fn unsubscribe_async(
+  channel channel: Channel,
+  consumer_tag consumer_tag: String,
+) -> Result(Nil, ConsumeError) {
+  do_unsubscribe(channel, consumer_tag, True)
+}
+
+@external(erlang, "carotte_ffi", "unsubscribe")
+fn do_unsubscribe(
+  channel: Channel,
+  consumer_tag: String,
+  nowait: Bool,
+) -> Result(Nil, ConsumeError)
+
+/// Acknowledge a message delivery.
+/// Used when manual acknowledgment is enabled (AutoAck(False)).
+///
+/// ## Parameters
+/// - `channel`: The channel to acknowledge on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `multiple`: If True, acknowledges all messages up to and including this delivery tag
+///
+/// ## Example
+/// ```gleam
+/// carotte.subscribe_with_options(
+///   supervisor,
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [carotte.AutoAck(False)],
+///   callback: fn(msg, meta) {
+///     // Process message
+///     let _ = carotte.ack(ch, meta.delivery_tag, False)
+///   },
+/// )
+/// ```
+pub fn ack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_ack(channel, delivery_tag, multiple)
+}
+
+/// Acknowledge a message delivery (acknowledges only this message).
+/// Convenience function for ack with multiple=False.
+pub fn ack_single(
+  channel: Channel,
+  delivery_tag: Int,
+) -> Result(Nil, ConsumeError) {
+  do_basic_ack(channel, delivery_tag, False)
+}
+
+@external(erlang, "carotte_ffi", "ack")
+fn do_basic_ack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+) -> Result(Nil, ConsumeError)
+
+/// Negatively acknowledge a message delivery.
+/// Used when manual acknowledgment is enabled (AutoAck(False)) and you want
+/// to indicate that the message could not be processed.
+///
+/// ## Parameters
+/// - `channel`: The channel to nack on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `multiple`: If True, nacks all messages up to and including this delivery tag
+/// - `requeue`: If True, the message(s) will be requeued; if False, they will be
+///   discarded or dead-lettered (if a dead letter exchange is configured)
+///
+/// ## Example
+/// ```gleam
+/// carotte.subscribe_with_options(
+///   consumer,
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [carotte.AutoAck(False)],
+///   callback: fn(msg, meta) {
+///     case process_message(msg) {
+///       Ok(_) -> carotte.ack_single(ch, meta.delivery_tag)
+///       Error(_) -> carotte.nack(ch, meta.delivery_tag, False, True)  // Requeue for retry
+///     }
+///   },
+/// )
+/// ```
+pub fn nack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_nack(channel, delivery_tag, multiple, requeue)
+}
+
+/// Negatively acknowledge a single message.
+/// Convenience function for nack with multiple=False.
+///
+/// ## Parameters
+/// - `channel`: The channel to nack on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `requeue`: If True, the message will be requeued; if False, it will be
+///   discarded or dead-lettered
+pub fn nack_single(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_nack(channel, delivery_tag, False, requeue)
+}
+
+@external(erlang, "carotte_ffi", "nack")
+fn do_basic_nack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError)
+
+/// Reject a message delivery.
+/// Similar to nack but only works with a single message (no multiple option).
+/// This is the original AMQP 0-9-1 method for rejecting messages.
+///
+/// ## Parameters
+/// - `channel`: The channel to reject on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `requeue`: If True, the message will be requeued; if False, it will be
+///   discarded or dead-lettered (if a dead letter exchange is configured)
+///
+/// ## Example
+/// ```gleam
+/// carotte.subscribe_with_options(
+///   consumer,
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [carotte.AutoAck(False)],
+///   callback: fn(msg, meta) {
+///     case validate_message(msg) {
+///       Ok(_) -> carotte.ack_single(ch, meta.delivery_tag)
+///       Error(_) -> carotte.reject(ch, meta.delivery_tag, False)  // Discard invalid message
+///     }
+///   },
+/// )
+/// ```
+pub fn reject(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_reject(channel, delivery_tag, requeue)
+}
+
+@external(erlang, "carotte_ffi", "reject")
+fn do_basic_reject(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError)
+
+// =============================================================================
+// CONSUMER ACTOR (INTERNAL)
+// =============================================================================
+
+type ConsumerState {
+  ConsumerState(
+    channel: Channel,
+    consumer_tag: String,
+    callback: fn(Payload, Deliver) -> Nil,
+    auto_ack: Bool,
+  )
+}
+
+type ConsumerMessage {
+  AmqpDelivery(Payload, Deliver)
+  AmqpCancelled
+  Shutdown
+}
+
+fn start_consumer_actor(
+  config: ConsumerConfig,
+) -> Result(actor.Started(String), actor.StartError) {
+  actor.new_with_initialiser(5000, fn(_self_subject) {
+    // Subscribe to the AMQP queue
+    let consumer_pid = process.self()
+    case
+      do_consume_ffi(
+        config.channel,
+        config.queue,
+        consumer_pid,
+        config.auto_ack,
+      )
+    {
+      Ok(consumer_tag) -> {
+        // Wait for basic.consume_ok
+        let _ =
+          process.new_selector()
+          |> process.select_record(atom.create("basic.consume_ok"), 1, fn(_) {
+            Nil
+          })
+          |> process.selector_receive(1000)
+
+        let state =
+          ConsumerState(
+            channel: config.channel,
+            consumer_tag:,
+            callback: config.callback,
+            auto_ack: config.auto_ack,
+          )
+
+        let selector = build_consumer_selector()
+
+        Ok(
+          actor.initialised(state)
+          |> actor.selecting(selector)
+          |> actor.returning(consumer_tag),
+        )
+      }
+      Error(_) -> Error("Failed to subscribe to queue")
+    }
+  })
+  |> actor.on_message(handle_consumer_message)
+  |> actor.start
+}
+
+fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
+  process.new_selector()
+  |> process.select_record(atom.create("basic.cancel"), 2, fn(_) {
+    AmqpCancelled
+  })
+  |> process.select_record(atom.create("basic.cancel_ok"), 1, fn(_) {
+    AmqpCancelled
+  })
+  |> process.select_other(fn(delivery_dyn) {
+    let basic_deliver_decoder = {
+      use consumer_tag <- decode.subfield([0, 1], decode.string)
+      use delivery_tag <- decode.subfield([0, 2], decode.int)
+      use redelivered <- decode.subfield([0, 3], decode.bool)
+      use exchange <- decode.subfield([0, 4], decode.string)
+      use routing_key <- decode.subfield([0, 5], decode.string)
+      decode.success(Deliver(
+        consumer_tag,
+        delivery_tag,
+        redelivered,
+        exchange,
+        routing_key,
+      ))
+    }
+
+    let payload_properties_decoder = {
+      let properties = []
+      use content_type <- decode.subfield([1], decode.optional(decode.string))
+      let properties = add_if_some(properties, ContentType, content_type)
+
+      use content_encoding <- decode.subfield(
+        [2],
+        decode.optional(decode.string),
+      )
+      let properties =
+        add_if_some(properties, ContentEncoding, content_encoding)
+
+      use delivery_mode <- decode.subfield([4], decode.optional(decode.int))
+      let properties =
+        add_if_some(properties, Persistent, case delivery_mode {
+          Some(2) -> Some(True)
+          Some(1) -> Some(False)
+          _ -> None
+        })
+
+      use priority <- decode.subfield([5], decode.optional(decode.int))
+      let properties = add_if_some(properties, Priority, priority)
+
+      use correlation_id <- decode.subfield([6], decode.optional(decode.string))
+      let properties = add_if_some(properties, CorrelationId, correlation_id)
+
+      use reply_to <- decode.subfield([7], decode.optional(decode.string))
+      let properties = add_if_some(properties, ReplyTo, reply_to)
+
+      use expiration_str <- decode.subfield([8], decode.optional(decode.string))
+      let expiration_duration = case expiration_str {
+        Some(s) ->
+          case int.parse(s) {
+            Ok(ms) -> Some(duration.milliseconds(ms))
+            Error(_) -> None
+          }
+        None -> None
+      }
+      let properties = add_if_some(properties, Expiration, expiration_duration)
+
+      use message_id <- decode.subfield([9], decode.optional(decode.string))
+      let properties = add_if_some(properties, MessageId, message_id)
+
+      use timestamp_secs <- decode.subfield([10], decode.optional(decode.int))
+      let timestamp_value = case timestamp_secs {
+        Some(secs) -> Some(timestamp.from_unix_seconds(secs))
+        None -> None
+      }
+      let properties = add_if_some(properties, Timestamp, timestamp_value)
+
+      use message_type <- decode.subfield([11], decode.optional(decode.string))
+      let properties = add_if_some(properties, Type, message_type)
+
+      use user_id <- decode.subfield([12], decode.optional(decode.string))
+      let properties = add_if_some(properties, UserId, user_id)
+
+      use app_id <- decode.subfield([13], decode.optional(decode.string))
+      let properties = add_if_some(properties, AppId, app_id)
+
+      decode.success(properties)
+    }
+
+    let payload_decoder = {
+      use properties <- decode.subfield([1, 1], payload_properties_decoder)
+      use payload <- decode.subfield([1, 2], decode.bit_array)
+      use headers <- decode.subfield([1, 1, 3], amqp_headers_decoder())
+      decode.success(Payload(payload, properties, headers))
+    }
+
+    let assert Ok(basic_deliver) =
+      decode.run(delivery_dyn, basic_deliver_decoder)
+    let assert Ok(payload) = decode.run(delivery_dyn, payload_decoder)
+
+    AmqpDelivery(payload, basic_deliver)
+  })
+}
+
+fn handle_consumer_message(
+  state: ConsumerState,
+  message: ConsumerMessage,
+) -> actor.Next(ConsumerState, ConsumerMessage) {
+  case message {
+    AmqpDelivery(payload, deliver) -> {
+      // Call the user's callback
+      state.callback(payload, deliver)
+      actor.continue(state)
+    }
+    AmqpCancelled -> actor.stop()
+    Shutdown -> actor.stop()
+  }
+}
+
+@external(erlang, "carotte_ffi", "consume")
+fn do_consume_ffi(
+  channel: Channel,
+  queue: String,
+  pid: Pid,
+  no_ack: Bool,
+) -> Result(String, ConsumeError)
+
+/// Decoder for AMQP headers
+/// Headers come as a list of {Name, Type, Value} tuples or undefined
+fn amqp_headers_decoder() -> decode.Decoder(HeaderList) {
+  let header_tuple_decoder = {
+    use name <- decode.field(0, decode.string)
+    use type_atom <- decode.field(1, atom.decoder())
+    use value <- decode.field(2, decode.dynamic)
+    decode.success(#(name, type_atom, value))
+  }
+
+  let list_decoder = decode.list(header_tuple_decoder)
+
+  // Handle both undefined (atom) and list cases
+  decode.one_of(list_decoder, [
+    // If it's undefined or any other atom, return empty list
+    decode.map(atom.decoder(), fn(_) { [] }),
+  ])
+  |> decode.map(HeaderList)
+}
+
+fn add_if_some(list, constructor, value) {
+  case value {
+    Some(v) -> [constructor(v), ..list]
+    None -> list
+  }
+}
+
+// =============================================================================
+// FFI HELPERS
+// =============================================================================
+
+/// Identity function trick from franz - casts any value to Dynamic at zero cost
+@external(erlang, "gleam@function", "identity")
+fn to_dynamic(value: a) -> dynamic.Dynamic
