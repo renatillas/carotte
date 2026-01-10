@@ -372,3 +372,287 @@ pub fn test_redelivery_flag() {
   let assert Ok("test redelivery") = process.receive(redelivered, 1000)
   let assert Ok(True) = process.receive(redelivery_flag2, 1000)
 }
+
+pub fn nack_with_requeue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_nack_requeue_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
+  // Purge queue to ensure clean state
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_nack_requeue_queue")
+
+  // Publish a message
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "test_nack_requeue_queue",
+      payload: "nack me",
+      options: [],
+    )
+
+  // Start the supervisor
+  let consumers = process.new_name("nack_requeue_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  // First consumer - receive and nack with requeue=True
+  let received = process.new_subject()
+  let nacked = process.new_subject()
+  let assert Ok(consumer_tag) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_nack_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(received, msg.payload)
+        // Nack with requeue - message should go back to queue
+        let assert Ok(Nil) = carotte.nack(ch, meta.delivery_tag, False, True)
+        process.send(nacked, "nacked")
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  // Receive the message and verify it was nacked
+  let assert Ok("nack me") = process.receive(received, 1000)
+  let assert Ok("nacked") = process.receive(nacked, 1000)
+
+  // Unsubscribe first consumer
+  let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
+  process.sleep(100)
+
+  // Second consumer should receive the requeued message
+  let redelivered = process.new_subject()
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_nack_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(redelivered, #(msg.payload, meta.redelivered))
+        // Acknowledge this time
+        let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  // Verify message was redelivered
+  let assert Ok(#("nack me", True)) = process.receive(redelivered, 1000)
+}
+
+pub fn nack_single_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_nack_single_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
+  // Purge queue to ensure clean state
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_nack_single_queue")
+
+  // Publish a message
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "test_nack_single_queue",
+      payload: "nack single",
+      options: [],
+    )
+
+  // Start the supervisor
+  let consumers = process.new_name("nack_single_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let received = process.new_subject()
+  let assert Ok(consumer_tag) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_nack_single_queue",
+      callback: fn(msg, meta) {
+        process.send(received, msg.payload)
+        // Use nack_single convenience function with requeue
+        let assert Ok(Nil) = carotte.nack_single(ch, meta.delivery_tag, True)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  let assert Ok("nack single") = process.receive(received, 1000)
+
+  // Unsubscribe and verify message was requeued
+  let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
+  process.sleep(100)
+
+  let redelivered = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_nack_single_queue",
+      callback: fn(msg, meta) {
+        process.send(redelivered, msg.payload)
+        let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  let assert Ok("nack single") = process.receive(redelivered, 1000)
+}
+
+pub fn nack_without_requeue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_nack_no_requeue_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
+  // Purge queue to ensure clean state
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_nack_no_requeue_queue")
+
+  // Publish a message
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "test_nack_no_requeue_queue",
+      payload: "discard me",
+      options: [],
+    )
+
+  // Start the supervisor
+  let consumers = process.new_name("nack_no_requeue_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let received = process.new_subject()
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_nack_no_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(received, msg.payload)
+        // Nack without requeue - message should be discarded
+        let assert Ok(Nil) = carotte.nack(ch, meta.delivery_tag, False, False)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  let assert Ok("discard me") = process.receive(received, 1000)
+
+  // Wait a bit and verify queue is empty (message was discarded)
+  process.sleep(100)
+  let assert Ok(carotte.Queue(_, 0, _)) =
+    carotte.queue_status(channel: ch, queue: "test_nack_no_requeue_queue")
+}
+
+pub fn reject_with_requeue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_reject_requeue_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
+  // Purge queue to ensure clean state
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_reject_requeue_queue")
+
+  // Publish a message
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "test_reject_requeue_queue",
+      payload: "reject me",
+      options: [],
+    )
+
+  // Start the supervisor
+  let consumers = process.new_name("reject_requeue_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let received = process.new_subject()
+  let assert Ok(consumer_tag) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_reject_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(received, msg.payload)
+        // Reject with requeue
+        let assert Ok(Nil) = carotte.reject(ch, meta.delivery_tag, True)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  let assert Ok("reject me") = process.receive(received, 1000)
+
+  // Unsubscribe and verify message was requeued
+  let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
+  process.sleep(100)
+
+  let redelivered = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_reject_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(redelivered, #(msg.payload, meta.redelivered))
+        let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  // Verify message was redelivered
+  let assert Ok(#("reject me", True)) = process.receive(redelivered, 1000)
+}
+
+pub fn reject_without_requeue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+  let test_queue = carotte.queue("test_reject_no_requeue_queue")
+  let assert Ok(_) = carotte.declare_queue(test_queue, ch)
+  // Purge queue to ensure clean state
+  let assert Ok(_) =
+    carotte.purge_queue(channel: ch, queue: "test_reject_no_requeue_queue")
+
+  // Publish a message
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "test_reject_no_requeue_queue",
+      payload: "reject and discard",
+      options: [],
+    )
+
+  // Start the supervisor
+  let consumers = process.new_name("reject_no_requeue_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let received = process.new_subject()
+  let assert Ok(_consumer) =
+    carotte.subscribe_with_options(
+      connection,
+      channel: ch,
+      queue: "test_reject_no_requeue_queue",
+      callback: fn(msg, meta) {
+        process.send(received, msg.payload)
+        // Reject without requeue - message should be discarded
+        let assert Ok(Nil) = carotte.reject(ch, meta.delivery_tag, False)
+        Nil
+      },
+      options: [carotte.AutoAck(False)],
+    )
+
+  let assert Ok("reject and discard") = process.receive(received, 1000)
+
+  // Wait a bit and verify queue is empty (message was discarded)
+  process.sleep(100)
+  let assert Ok(carotte.Queue(_, 0, _)) =
+    carotte.queue_status(channel: ch, queue: "test_reject_no_requeue_queue")
+}

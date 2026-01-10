@@ -28,7 +28,7 @@
 ////   {
 ////     header: "Consuming",
 ////     types: ["Consumer", "ConsumerSupervisorMessage"],
-////     functions: ["start_consumer", "consumer_supervised", "named_consumer", "subscribe", "subscribe_with_options", "unsubscribe", "unsubscribe_async", "ack", "ack_single"]
+////     functions: ["start_consumer", "consumer_supervised", "named_consumer", "subscribe", "subscribe_with_options", "unsubscribe", "unsubscribe_async", "ack", "ack_single", "nack", "nack_single", "reject"]
 ////   },
 ////   {
 ////     header: "Errors",
@@ -151,7 +151,7 @@
 ////
 //// - **Type-safe API**: Leverage Gleam's type system for safe message handling
 //// - **OTP Supervision**: Integrate consumers into your application's supervision tree
-////   via `consumer_supervised`, or use standalone mode with `consumer_start`
+////   via `consumer_supervised`, or use standalone mode with `start_consumer`
 //// - **Operation-Specific Errors**: Granular error types (`ConnectionError`, `ChannelError`,
 ////   `ExchangeError`, `QueueError`, `PublishError`, `ConsumeError`) for precise error handling
 //// - **Async Operations**: Non-blocking variants with `_async` suffix
@@ -1540,6 +1540,105 @@ fn do_basic_ack(
   channel: Channel,
   delivery_tag: Int,
   multiple: Bool,
+) -> Result(Nil, ConsumeError)
+
+/// Negatively acknowledge a message delivery.
+/// Used when manual acknowledgment is enabled (AutoAck(False)) and you want
+/// to indicate that the message could not be processed.
+///
+/// ## Parameters
+/// - `channel`: The channel to nack on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `multiple`: If True, nacks all messages up to and including this delivery tag
+/// - `requeue`: If True, the message(s) will be requeued; if False, they will be
+///   discarded or dead-lettered (if a dead letter exchange is configured)
+///
+/// ## Example
+/// ```gleam
+/// carotte.subscribe_with_options(
+///   consumer,
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [carotte.AutoAck(False)],
+///   callback: fn(msg, meta) {
+///     case process_message(msg) {
+///       Ok(_) -> carotte.ack_single(ch, meta.delivery_tag)
+///       Error(_) -> carotte.nack(ch, meta.delivery_tag, False, True)  // Requeue for retry
+///     }
+///   },
+/// )
+/// ```
+pub fn nack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_nack(channel, delivery_tag, multiple, requeue)
+}
+
+/// Negatively acknowledge a single message.
+/// Convenience function for nack with multiple=False.
+///
+/// ## Parameters
+/// - `channel`: The channel to nack on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `requeue`: If True, the message will be requeued; if False, it will be
+///   discarded or dead-lettered
+pub fn nack_single(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_nack(channel, delivery_tag, False, requeue)
+}
+
+@external(erlang, "carotte_ffi", "nack")
+fn do_basic_nack(
+  channel: Channel,
+  delivery_tag: Int,
+  multiple: Bool,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError)
+
+/// Reject a message delivery.
+/// Similar to nack but only works with a single message (no multiple option).
+/// This is the original AMQP 0-9-1 method for rejecting messages.
+///
+/// ## Parameters
+/// - `channel`: The channel to reject on
+/// - `delivery_tag`: The delivery tag from the message metadata
+/// - `requeue`: If True, the message will be requeued; if False, it will be
+///   discarded or dead-lettered (if a dead letter exchange is configured)
+///
+/// ## Example
+/// ```gleam
+/// carotte.subscribe_with_options(
+///   consumer,
+///   channel: ch,
+///   queue: "my_queue",
+///   options: [carotte.AutoAck(False)],
+///   callback: fn(msg, meta) {
+///     case validate_message(msg) {
+///       Ok(_) -> carotte.ack_single(ch, meta.delivery_tag)
+///       Error(_) -> carotte.reject(ch, meta.delivery_tag, False)  // Discard invalid message
+///     }
+///   },
+/// )
+/// ```
+pub fn reject(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
+) -> Result(Nil, ConsumeError) {
+  do_basic_reject(channel, delivery_tag, requeue)
+}
+
+@external(erlang, "carotte_ffi", "reject")
+fn do_basic_reject(
+  channel: Channel,
+  delivery_tag: Int,
+  requeue: Bool,
 ) -> Result(Nil, ConsumeError)
 
 // =============================================================================

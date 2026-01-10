@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `describe_*_error` functions for each error type to convert errors to human-readable strings
 - `gleam_time` dependency for type-safe `Duration` and `Timestamp` handling
 - Comprehensive module documentation with usage examples
+- `nack` function for negatively acknowledging messages with control over multiple and requeue options
+- `nack_single` convenience function for negatively acknowledging a single message
+- `reject` function for rejecting messages (original AMQP 0-9-1 method)
+
+### Fixed
+
+- Added try/catch error handling to `consume` FFI function to match other FFI functions
+- Fixed `ListHeader` serialization in FFI layer - array elements were incorrectly destructured
+- Fixed typo in documentation: `consumer_start` -> `start_consumer`
 
 ## 4.0.1 - 2026-01-08
 

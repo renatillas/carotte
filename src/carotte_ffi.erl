@@ -1,6 +1,6 @@
 -module(carotte_ffi).
 
--export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, unsubscribe/3,
+-export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, nack/4, reject/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
          header_value_to_header_tuple/1, parse_amqp_headers/1, is_process_alive/1]).
@@ -637,17 +637,24 @@ publish({channel, ChannelPid}, Exchange, RoutingKey, Payload, Proplist) ->
          arguments = []}).
 
 consume({channel, ChannelPid}, Queue, Pid, NoAck) ->
-  % AMQP will send messages directly to Pid, including basic.consume_ok
-  case amqp_channel:subscribe(ChannelPid,
-                              #'basic.consume'{queue = Queue, no_ack = NoAck},
-                              Pid)
-  of
-    {'basic.consume_ok', ConsumerTag_} ->
-      % The AMQP client might send basic.consume_ok directly to Pid
-      % Don't send it again
-      {ok, ConsumerTag_};
-    Error ->
-      convert_consume_error(Error)
+  try
+    % AMQP will send messages directly to Pid, including basic.consume_ok
+    case amqp_channel:subscribe(ChannelPid,
+                                #'basic.consume'{queue = Queue, no_ack = NoAck},
+                                Pid)
+    of
+      {'basic.consume_ok', ConsumerTag_} ->
+        % The AMQP client might send basic.consume_ok directly to Pid
+        % Don't send it again
+        {ok, ConsumerTag_};
+      Error ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
   end.
 
 -record('basic.ack', {delivery_tag = 0, multiple = false}).
@@ -656,6 +663,47 @@ ack({channel, ChannelPid}, DeliveryTag, Multiple) ->
   try
     case amqp_channel:call(ChannelPid,
                            #'basic.ack'{delivery_tag = DeliveryTag, multiple = Multiple})
+    of
+      ok ->
+        {ok, nil};
+      Error ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
+  end.
+
+-record('basic.nack', {delivery_tag = 0, multiple = false, requeue = true}).
+
+nack({channel, ChannelPid}, DeliveryTag, Multiple, Requeue) ->
+  try
+    case amqp_channel:call(ChannelPid,
+                           #'basic.nack'{delivery_tag = DeliveryTag,
+                                         multiple = Multiple,
+                                         requeue = Requeue})
+    of
+      ok ->
+        {ok, nil};
+      Error ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
+  end.
+
+-record('basic.reject', {delivery_tag = 0, requeue = true}).
+
+reject({channel, ChannelPid}, DeliveryTag, Requeue) ->
+  try
+    case amqp_channel:call(ChannelPid,
+                           #'basic.reject'{delivery_tag = DeliveryTag,
+                                           requeue = Requeue})
     of
       ok ->
         {ok, nil};
@@ -709,7 +757,7 @@ header_value_to_header_tuple(Value) ->
       {longstr, Inner};
     {list_header, Inner} ->
       {array,
-       lists:map(fun({ArrayValue}) -> {header_value_to_header_tuple(ArrayValue)} end, Inner)}
+       lists:map(fun(ArrayValue) -> header_value_to_header_tuple(ArrayValue) end, Inner)}
   end.
 
 % Convert AMQP headers proplist to Gleam HeaderList format

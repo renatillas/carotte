@@ -460,6 +460,180 @@ pub fn receive_headers_test() {
     list.find(received_headers, fn(h) { h.0 == "bool_key" })
 }
 
+pub fn receive_float_header_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+  let assert Ok(_) =
+    carotte.declare_exchange(
+      carotte.exchange("float_headers_test_exchange"),
+      channel,
+    )
+  // Delete the queue first to ensure it's clean
+  let _ =
+    carotte.delete_queue(
+      channel:,
+      queue: "float_headers_test_queue",
+      if_unused: False,
+      if_empty: False,
+    )
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("float_headers_test_queue"), channel)
+  let assert Ok(_) =
+    carotte.bind_queue(
+      channel: channel,
+      queue: "float_headers_test_queue",
+      exchange: "float_headers_test_exchange",
+      routing_key: "",
+    )
+
+  let headers_subject = process.new_subject()
+
+  // Start the supervisor
+  let consumers = process.new_name("float_headers_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel: channel,
+      queue: "float_headers_test_queue",
+      callback: fn(payload, _) {
+        let headers = carotte.headers_to_list(payload.headers)
+        process.send(headers_subject, headers)
+        Nil
+      },
+    )
+  process.sleep(500)
+
+  // Publish message with float header
+  let headers =
+    carotte.headers_from_list([
+      #("float_key", carotte.FloatHeader(3.14159)),
+      #("negative_float", carotte.FloatHeader(-42.5)),
+    ])
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel: channel,
+      exchange: "float_headers_test_exchange",
+      routing_key: "",
+      payload: "test payload with float",
+      options: [carotte.MessageHeaders(headers)],
+    )
+  process.sleep(500)
+
+  let assert Ok(received_headers) = process.receive(headers_subject, 2000)
+
+  // Verify float headers were received correctly
+  assert list.length(received_headers) == 2
+
+  let assert Ok(#(_, carotte.FloatHeader(val1))) =
+    list.find(received_headers, fn(h) { h.0 == "float_key" })
+  // Float comparison with tolerance
+  assert val1 >. 3.14 && val1 <. 3.15
+
+  let assert Ok(#(_, carotte.FloatHeader(val2))) =
+    list.find(received_headers, fn(h) { h.0 == "negative_float" })
+  assert val2 <. -42.0 && val2 >. -43.0
+}
+
+pub fn receive_list_header_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+  let assert Ok(_) =
+    carotte.declare_exchange(
+      carotte.exchange("list_headers_test_exchange"),
+      channel,
+    )
+  // Delete the queue first to ensure it's clean
+  let _ =
+    carotte.delete_queue(
+      channel:,
+      queue: "list_headers_test_queue",
+      if_unused: False,
+      if_empty: False,
+    )
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("list_headers_test_queue"), channel)
+  let assert Ok(_) =
+    carotte.bind_queue(
+      channel: channel,
+      queue: "list_headers_test_queue",
+      exchange: "list_headers_test_exchange",
+      routing_key: "",
+    )
+
+  let headers_subject = process.new_subject()
+
+  // Start the supervisor
+  let consumers = process.new_name("list_headers_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel: channel,
+      queue: "list_headers_test_queue",
+      callback: fn(payload, _) {
+        let headers = carotte.headers_to_list(payload.headers)
+        process.send(headers_subject, headers)
+        Nil
+      },
+    )
+  process.sleep(500)
+
+  // Publish message with list header containing mixed types
+  let headers =
+    carotte.headers_from_list([
+      #(
+        "tags",
+        carotte.ListHeader([
+          carotte.StringHeader("tag1"),
+          carotte.StringHeader("tag2"),
+          carotte.StringHeader("tag3"),
+        ]),
+      ),
+      #(
+        "numbers",
+        carotte.ListHeader([
+          carotte.IntHeader(1),
+          carotte.IntHeader(2),
+          carotte.IntHeader(3),
+        ]),
+      ),
+    ])
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel: channel,
+      exchange: "list_headers_test_exchange",
+      routing_key: "",
+      payload: "test payload with list",
+      options: [carotte.MessageHeaders(headers)],
+    )
+  process.sleep(500)
+
+  let assert Ok(received_headers) = process.receive(headers_subject, 2000)
+
+  // Verify list headers were received correctly
+  assert list.length(received_headers) == 2
+
+  let assert Ok(#(_, carotte.ListHeader(tags))) =
+    list.find(received_headers, fn(h) { h.0 == "tags" })
+  assert list.length(tags) == 3
+  let assert [
+    carotte.StringHeader("tag1"),
+    carotte.StringHeader("tag2"),
+    carotte.StringHeader("tag3"),
+  ] = tags
+
+  let assert Ok(#(_, carotte.ListHeader(numbers))) =
+    list.find(received_headers, fn(h) { h.0 == "numbers" })
+  assert list.length(numbers) == 3
+  let assert [carotte.IntHeader(1), carotte.IntHeader(2), carotte.IntHeader(3)] =
+    numbers
+}
+
 pub fn declare_queue_with_auto_generated_name_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
