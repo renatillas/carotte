@@ -1,4 +1,4 @@
-# Carotte
+# Carotte 🥕
 
 [![Package Version](https://img.shields.io/hexpm/v/carotte)](https://hex.pm/packages/carotte)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/carotte/)
