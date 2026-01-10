@@ -1117,10 +1117,24 @@ pub fn queue_status(
 // PUBLISHER FUNCTIONS
 // =============================================================================
 
-@external(erlang, "carotte_ffi", "header_value_to_header_tuple")
 fn header_value_to_header_tuple(
   value: HeaderValue,
-) -> #(atom.Atom, dynamic.Dynamic)
+) -> #(atom.Atom, dynamic.Dynamic) {
+  case value {
+    BoolHeader(inner) -> #(atom.create("bool"), to_dynamic(inner))
+    FloatHeader(inner) -> #(atom.create("float"), to_dynamic(inner))
+    IntHeader(inner) -> #(atom.create("long"), to_dynamic(inner))
+    StringHeader(inner) -> #(atom.create("longstr"), to_dynamic(inner))
+    ListHeader(inner) -> {
+      let mapped =
+        list.map(inner, fn(v) {
+          let #(type_atom, val) = header_value_to_header_tuple(v)
+          #(type_atom, val)
+        })
+      #(atom.create("array"), to_dynamic(mapped))
+    }
+  }
+}
 
 /// Create an empty HeaderList.
 /// Useful for pattern matching or when no headers are needed.
@@ -1164,107 +1178,55 @@ pub fn headers_to_list(headers: HeaderList) -> List(#(String, HeaderValue)) {
   raw_headers
   |> list.filter_map(fn(header) {
     let #(name, type_atom, value) = header
-    let type_name = atom.to_string(type_atom)
-    case type_name {
-      "bool" -> {
-        case decode.run(value, decode.bool) {
-          Ok(bool_val) -> Ok(#(name, BoolHeader(bool_val)))
-          Error(_) -> Error(Nil)
-        }
-      }
-      "long" -> {
-        case decode.run(value, decode.int) {
-          Ok(int_val) -> Ok(#(name, IntHeader(int_val)))
-          Error(_) -> Error(Nil)
-        }
-      }
-      "float" -> {
-        case decode.run(value, decode.float) {
-          Ok(float_val) -> Ok(#(name, FloatHeader(float_val)))
-          Error(_) -> Error(Nil)
-        }
-      }
-      "longstr" -> {
-        case decode.run(value, decode.string) {
-          Ok(str_val) -> Ok(#(name, StringHeader(str_val)))
-          Error(_) -> Error(Nil)
-        }
-      }
-      "array" -> {
-        case parse_header_array(value) {
-          Ok(list_val) -> Ok(#(name, ListHeader(list_val)))
-          Error(_) -> Error(Nil)
-        }
-      }
-      _ -> Error(Nil)
+    // Build a tuple {type_atom, value} to decode as HeaderValue
+    let typed_value = to_dynamic(#(type_atom, value))
+    case decode.run(typed_value, header_value_decoder()) {
+      Ok(header_value) -> Ok(#(name, header_value))
+      Error(_) -> Error(Nil)
     }
   })
 }
 
-fn parse_header_array(value: dynamic.Dynamic) -> Result(List(HeaderValue), Nil) {
-  let array_decoder = decode.list(decode.dynamic)
+/// Decoder for a single HeaderValue from AMQP {Type, Value} tuple format
+fn header_value_decoder() -> decode.Decoder(HeaderValue) {
+  use type_atom <- decode.field(0, atom.decoder())
+  use value <- decode.field(1, decode.dynamic)
+  let type_name = atom.to_string(type_atom)
 
-  use items <- result.try(
-    decode.run(value, array_decoder)
-    |> result.replace_error(Nil),
-  )
-
-  items
-  |> list.try_map(fn(item) {
-    let type_decoder = decode.at([0], decode.dynamic)
-    let value_decoder = decode.at([1], decode.dynamic)
-
-    use type_dyn <- result.try(
-      decode.run(item, type_decoder)
-      |> result.replace_error(Nil),
-    )
-    use val <- result.try(
-      decode.run(item, value_decoder)
-      |> result.replace_error(Nil),
-    )
-
-    case decode.run(type_dyn, atom.decoder()) {
-      Ok(type_atom) -> {
-        let type_name = atom.to_string(type_atom)
-        case type_name {
-          "bool" -> {
-            use b <- result.map(
-              decode.run(val, decode.bool)
-              |> result.replace_error(Nil),
-            )
-            BoolHeader(b)
-          }
-          "long" -> {
-            use i <- result.map(
-              decode.run(val, decode.int)
-              |> result.replace_error(Nil),
-            )
-            IntHeader(i)
-          }
-          "float" -> {
-            use f <- result.map(
-              decode.run(val, decode.float)
-              |> result.replace_error(Nil),
-            )
-            FloatHeader(f)
-          }
-          "longstr" -> {
-            use s <- result.map(
-              decode.run(val, decode.string)
-              |> result.replace_error(Nil),
-            )
-            StringHeader(s)
-          }
-          "array" -> {
-            use nested <- result.map(parse_header_array(val))
-            ListHeader(nested)
-          }
-          _ -> Error(Nil)
-        }
+  case type_name {
+    "bool" ->
+      case decode.run(value, decode.bool) {
+        Ok(b) -> decode.success(BoolHeader(b))
+        Error(_) -> decode.failure(BoolHeader(False), "Expected bool")
       }
-      Error(_) -> Error(Nil)
-    }
-  })
+    "long" ->
+      case decode.run(value, decode.int) {
+        Ok(i) -> decode.success(IntHeader(i))
+        Error(_) -> decode.failure(IntHeader(0), "Expected int")
+      }
+    "float" ->
+      case decode.run(value, decode.float) {
+        Ok(f) -> decode.success(FloatHeader(f))
+        Error(_) -> decode.failure(FloatHeader(0.0), "Expected float")
+      }
+    "longstr" ->
+      case decode.run(value, decode.string) {
+        Ok(s) -> decode.success(StringHeader(s))
+        Error(_) -> decode.failure(StringHeader(""), "Expected string")
+      }
+    "array" ->
+      case decode.run(value, header_array_decoder()) {
+        Ok(list_header) -> decode.success(list_header)
+        Error(_) -> decode.failure(ListHeader([]), "Expected array")
+      }
+    _ -> decode.failure(BoolHeader(False), "Unknown header type: " <> type_name)
+  }
+}
+
+/// Decoder for AMQP header arrays (list of {Type, Value} tuples)
+fn header_array_decoder() -> decode.Decoder(HeaderValue) {
+  decode.list(header_value_decoder())
+  |> decode.map(ListHeader)
 }
 
 /// Publish a message to an exchange.
@@ -1277,51 +1239,43 @@ pub fn publish(
   payload payload: String,
   options options: List(PublishOption),
 ) -> Result(Nil, PublishError) {
-  let ffi_options = list.map(options, convert_publish_option_for_ffi)
+  let ffi_options = list.map(options, publish_option_to_tuple)
   do_publish(channel, exchange, routing_key, payload, ffi_options)
 }
 
-/// Internal type for FFI - expiration is a string (AMQP protocol requirement).
-type PublishOptionFfi {
-  MandatoryFfi(Bool)
-  ContentTypeFfi(String)
-  ContentEncodingFfi(String)
-  MessageHeadersFfi(HeaderList)
-  PersistentFfi(Bool)
-  CorrelationIdFfi(String)
-  PriorityFfi(Int)
-  ReplyToFfi(String)
-  ExpirationFfi(String)
-  MessageIdFfi(String)
-  TimestampFfi(Int)
-  TypeFfi(String)
-  UserIdFfi(String)
-  AppIdFfi(String)
-}
+/// Opaque type for FFI option tuples - uses identity function for zero-cost casting
+type FfiOption
 
-fn convert_publish_option_for_ffi(option: PublishOption) -> PublishOptionFfi {
+@external(erlang, "gleam@function", "identity")
+fn to_ffi_option(value: a) -> FfiOption
+
+/// Convert a PublishOption to a list of FFI tuples (atom, value)
+/// Returns a list because some options may be skipped
+fn publish_option_to_tuple(option: PublishOption) -> FfiOption {
   case option {
-    Mandatory(v) -> MandatoryFfi(v)
-    ContentType(v) -> ContentTypeFfi(v)
-    ContentEncoding(v) -> ContentEncodingFfi(v)
-    MessageHeaders(v) -> MessageHeadersFfi(v)
-    Persistent(v) -> PersistentFfi(v)
-    CorrelationId(v) -> CorrelationIdFfi(v)
-    Priority(v) -> PriorityFfi(v)
-    ReplyTo(v) -> ReplyToFfi(v)
+    Mandatory(v) -> #(atom.create("mandatory_ffi"), v) |> to_ffi_option
+    ContentType(v) -> #(atom.create("content_type_ffi"), v) |> to_ffi_option
+    ContentEncoding(v) ->
+      #(atom.create("content_encoding_ffi"), v) |> to_ffi_option
+    MessageHeaders(HeaderList(v)) ->
+      #(atom.create("message_headers_ffi"), v) |> to_ffi_option
+    Persistent(v) -> #(atom.create("persistent_ffi"), v) |> to_ffi_option
+    CorrelationId(v) -> #(atom.create("correlation_id_ffi"), v) |> to_ffi_option
+    Priority(v) -> #(atom.create("priority_ffi"), v) |> to_ffi_option
+    ReplyTo(v) -> #(atom.create("reply_to_ffi"), v) |> to_ffi_option
     Expiration(dur) -> {
       let #(seconds, nanos) = duration.to_seconds_and_nanoseconds(dur)
       let millis = seconds * 1000 + nanos / 1_000_000
-      ExpirationFfi(int.to_string(millis))
+      #(atom.create("expiration_ffi"), int.to_string(millis)) |> to_ffi_option
     }
-    MessageId(v) -> MessageIdFfi(v)
+    MessageId(v) -> #(atom.create("message_id_ffi"), v) |> to_ffi_option
     Timestamp(ts) -> {
       let #(epoch_secs, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
-      TimestampFfi(epoch_secs)
+      #(atom.create("timestamp_ffi"), epoch_secs) |> to_ffi_option
     }
-    Type(v) -> TypeFfi(v)
-    UserId(v) -> UserIdFfi(v)
-    AppId(v) -> AppIdFfi(v)
+    Type(v) -> #(atom.create("type_ffi"), v) |> to_ffi_option
+    UserId(v) -> #(atom.create("user_id_ffi"), v) |> to_ffi_option
+    AppId(v) -> #(atom.create("app_id_ffi"), v) |> to_ffi_option
   }
 }
 
@@ -1331,7 +1285,7 @@ fn do_publish(
   exchange: String,
   routing_key: String,
   payload: String,
-  publish_options: List(PublishOptionFfi),
+  publish_options: List(FfiOption),
 ) -> Result(Nil, PublishError)
 
 // =============================================================================
@@ -1795,8 +1749,7 @@ fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
     let payload_decoder = {
       use properties <- decode.subfield([1, 1], payload_properties_decoder)
       use payload <- decode.subfield([1, 2], decode.string)
-      use raw_headers <- decode.subfield([1, 1, 3], decode.dynamic)
-      let headers = parse_amqp_headers(raw_headers)
+      use headers <- decode.subfield([1, 1, 3], amqp_headers_decoder())
       decode.success(Payload(payload, properties, headers))
     }
 
@@ -1831,8 +1784,25 @@ fn do_consume_ffi(
   no_ack: Bool,
 ) -> Result(String, ConsumeError)
 
-@external(erlang, "carotte_ffi", "parse_amqp_headers")
-fn parse_amqp_headers(headers: decode.Dynamic) -> HeaderList
+/// Decoder for AMQP headers
+/// Headers come as a list of {Name, Type, Value} tuples or undefined
+fn amqp_headers_decoder() -> decode.Decoder(HeaderList) {
+  let header_tuple_decoder = {
+    use name <- decode.field(0, decode.string)
+    use type_atom <- decode.field(1, atom.decoder())
+    use value <- decode.field(2, decode.dynamic)
+    decode.success(#(name, type_atom, value))
+  }
+
+  let list_decoder = decode.list(header_tuple_decoder)
+
+  // Handle both undefined (atom) and list cases
+  decode.one_of(list_decoder, [
+    // If it's undefined or any other atom, return empty list
+    decode.map(atom.decoder(), fn(_) { [] }),
+  ])
+  |> decode.map(HeaderList)
+}
 
 fn add_if_some(list, constructor, value) {
   case value {
@@ -1840,3 +1810,11 @@ fn add_if_some(list, constructor, value) {
     None -> list
   }
 }
+
+// =============================================================================
+// FFI HELPERS
+// =============================================================================
+
+/// Identity function trick from franz - casts any value to Dynamic at zero cost
+@external(erlang, "gleam@function", "identity")
+fn to_dynamic(value: a) -> dynamic.Dynamic

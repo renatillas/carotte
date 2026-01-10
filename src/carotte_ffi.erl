@@ -3,7 +3,7 @@
 -export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, nack/4, reject/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
-         header_value_to_header_tuple/1, parse_amqp_headers/1, is_process_alive/1]).
+         is_process_alive/1]).
 
 %% =============================================================================
 %% CONNECTION ERROR CONVERTER
@@ -577,12 +577,11 @@ queue_purge({channel, ChannelPid}, Queue, Nowait) ->
 
 publish({channel, ChannelPid}, Exchange, RoutingKey, Payload, Proplist) ->
   try
+    %% Headers are now passed as raw list from Gleam (already converted)
     Headers =
       case proplists:get_value(message_headers_ffi, Proplist, undefined) of
-        {header_list, HeaderList} ->
-          HeaderList;
-        _ ->
-          undefined
+        undefined -> undefined;
+        RawHeaders -> RawHeaders
       end,
     Props =
       #'P_basic'{content_type = proplists:get_value(content_type_ffi, Proplist, undefined),
@@ -744,31 +743,6 @@ close({client, Pid, _Config}) ->
     {error, Error} ->
       convert_connection_error(Error)
   end.
-
-header_value_to_header_tuple(Value) ->
-  case Value of
-    {bool_header, Inner} ->
-      {bool, Inner};
-    {float_header, Inner} ->
-      {float, Inner};
-    {int_header, Inner} ->
-      {long, Inner};
-    {string_header, Inner} ->
-      {longstr, Inner};
-    {list_header, Inner} ->
-      {array,
-       lists:map(fun(ArrayValue) -> header_value_to_header_tuple(ArrayValue) end, Inner)}
-  end.
-
-% Convert AMQP headers proplist to Gleam HeaderList format
-% AMQP headers: [{Name :: binary(), Type :: atom(), Value :: term()}, ...]
-% Gleam HeaderList: {header_list, [{Name, Type, Value}, ...]}
-parse_amqp_headers(undefined) ->
-  {header_list, []};
-parse_amqp_headers(Headers) when is_list(Headers) ->
-  {header_list, Headers};
-parse_amqp_headers(_) ->
-  {header_list, []}.
 
 % Check if the connection process is alive
 is_process_alive({client, Pid, _Config}) ->
