@@ -1853,10 +1853,7 @@ pub fn durable_exchange_test() {
 
   // Declare a durable exchange
   let assert Ok(Nil) =
-    carotte.Exchange(
-      ..carotte.exchange("durable_test_exchange"),
-      durable: True,
-    )
+    carotte.Exchange(..carotte.exchange("durable_test_exchange"), durable: True)
     |> carotte.declare_exchange(channel)
 
   // Cleanup

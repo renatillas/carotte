@@ -384,19 +384,19 @@ pub fn describe_connection_error_test() {
   assert carotte.describe_connection_error(carotte.ConnectionClosed)
     == "Connection closed"
 
-  assert carotte.describe_connection_error(
-    carotte.ConnectionAuthFailure("bad creds"),
-  )
+  assert carotte.describe_connection_error(carotte.ConnectionAuthFailure(
+      "bad creds",
+    ))
     == "Auth failure: bad creds"
 
-  assert carotte.describe_connection_error(
-    carotte.ConnectionRefused("server down"),
-  )
+  assert carotte.describe_connection_error(carotte.ConnectionRefused(
+      "server down",
+    ))
     == "Connection refused: server down"
 
-  assert carotte.describe_connection_error(
-    carotte.ConnectionTimeout("timed out"),
-  )
+  assert carotte.describe_connection_error(carotte.ConnectionTimeout(
+      "timed out",
+    ))
     == "Connection timeout: timed out"
 
   assert carotte.describe_connection_error(carotte.NotConnected)
@@ -405,15 +405,15 @@ pub fn describe_connection_error_test() {
   assert carotte.describe_connection_error(carotte.AlreadyConnected)
     == "Already connected"
 
-  assert carotte.describe_connection_error(
-    carotte.ConnectionUnknownError("mystery"),
-  )
+  assert carotte.describe_connection_error(carotte.ConnectionUnknownError(
+      "mystery",
+    ))
     == "Unknown error: mystery"
 
   // Test nested ReconnectionFailed
   assert carotte.describe_connection_error(
-    carotte.ReconnectionFailed(carotte.ConnectionRefused("refused")),
-  )
+      carotte.ReconnectionFailed(carotte.ConnectionRefused("refused")),
+    )
     == "Reconnection failed: Connection refused: refused"
 }
 
@@ -435,14 +435,14 @@ pub fn describe_exchange_error_test() {
   assert carotte.describe_exchange_error(carotte.ExchangeNotFound("not found"))
     == "Exchange not found: not found"
 
-  assert carotte.describe_exchange_error(
-    carotte.ExchangeAccessRefused("refused"),
-  )
+  assert carotte.describe_exchange_error(carotte.ExchangeAccessRefused(
+      "refused",
+    ))
     == "Access refused: refused"
 
-  assert carotte.describe_exchange_error(
-    carotte.ExchangePreconditionFailed("failed"),
-  )
+  assert carotte.describe_exchange_error(carotte.ExchangePreconditionFailed(
+      "failed",
+    ))
     == "Precondition failed: failed"
 
   assert carotte.describe_exchange_error(carotte.ExchangeChannelClosed("closed"))
@@ -511,7 +511,10 @@ pub fn queue_not_found_test() {
 
   // Try to get status of a queue that doesn't exist
   let assert Error(carotte.QueueNotFound(_)) =
-    carotte.queue_status(channel: ch, queue: "definitely_not_existing_queue_xyz")
+    carotte.queue_status(
+      channel: ch,
+      queue: "definitely_not_existing_queue_xyz",
+    )
 }
 
 // Test purge on non-existent queue
