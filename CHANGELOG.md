@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-01-10
+
+### Changed
+
+- **BREAKING**: Consolidated all modules into a single `carotte` module. Removed `carotte/channel`, `carotte/exchange`, `carotte/publisher`, and `carotte/queue` submodules.
+- **BREAKING**: Replaced single `CarotteError` type with operation-specific error types: `ConnectionError`, `ChannelError`, `ExchangeError`, `QueueError`, `PublishError`, `ConsumeError`.
+- **BREAKING**: Consumer API completely redesigned with OTP supervision integration via `factory_supervisor`
+- **BREAKING**: `ClientConfig.heartbeat` now uses `Duration` instead of `Int` (seconds)
+- **BREAKING**: `ClientConfig.connection_timeout` now uses `Duration` instead of `Int` (milliseconds)
+- **BREAKING**: `PublishOption.Expiration` now uses `Duration` instead of `String`
+- **BREAKING**: `PublishOption.Timestamp` now uses `timestamp.Timestamp` instead of `Int`
+
+### Removed
+
+- Removed `carotte/channel`, `carotte/exchange`, `carotte/publisher`, and `carotte/queue` submodules (consolidated into main module)
+- Removed `ConsumerInfo` type and `consumer_info` function
+- Removed `consumer_tag()` function (no longer needed since `subscribe` returns the tag directly)
+
+### Added
+
+- OTP supervision integration for consumers using `factory_supervisor`
+- `consumer_supervised` function to create a child specification for supervision trees
+- `named_consumer` function to get a consumer reference by name
+- `describe_*_error` functions for each error type to convert errors to human-readable strings
+- `gleam_time` dependency for type-safe `Duration` and `Timestamp` handling
+- Comprehensive module documentation with usage examples
+
 ## 4.0.1 - 2026-01-08
 
 ### Fixed
@@ -122,7 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Virtual host configuration
 - Connection parameters (heartbeat, timeout, frame size)
 
-[Unreleased]: https://github.com/renatillas/carotte/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/renatillas/carotte/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/renatillas/carotte/compare/v4.0.1...v5.0.0
 [4.0.0]: https://github.com/renatillas/carotte/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/renatillas/carotte/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/renatillas/carotte/compare/v2.0.0...v2.1.0
