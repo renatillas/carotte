@@ -11,6 +11,59 @@ pub fn main() {
   gleeunit.main()
 }
 
+// =============================================================================
+// CONNECTION STATE FUNCTIONS
+// =============================================================================
+
+pub fn is_connected_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+
+  // Should be connected after start
+  assert carotte.is_connected(client) == True
+
+  // Close the connection
+  let assert Ok(Nil) = carotte.close(client)
+
+  // Should not be connected after close
+  assert carotte.is_connected(client) == False
+}
+
+pub fn connection_state_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+
+  // Should be Connected after start
+  assert carotte.connection_state(client) == carotte.Connected
+
+  // Close the connection
+  let assert Ok(Nil) = carotte.close(client)
+
+  // Should be Disconnected after close
+  let assert carotte.Disconnected(carotte.ConnectionProcessNotAlive) =
+    carotte.connection_state(client)
+}
+
+pub fn reconnect_success_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+
+  // Verify connected
+  assert carotte.is_connected(client) == True
+
+  // Close the connection
+  let assert Ok(Nil) = carotte.close(client)
+
+  // Verify disconnected
+  assert carotte.is_connected(client) == False
+
+  // Reconnect should succeed
+  let assert Ok(new_client) = carotte.reconnect(client)
+
+  // New client should be connected
+  assert carotte.is_connected(new_client) == True
+
+  // Cleanup
+  let assert Ok(Nil) = carotte.close(new_client)
+}
+
 pub fn declare_exchange_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
@@ -928,5 +981,914 @@ pub fn factory_supervisor_manual_ack_test() {
   let assert Ok(carotte.Queue(_, 0, _)) = carotte.queue_status(channel:, queue:)
 
   // 9. Cleanup
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// EXCHANGE TYPE TESTS
+// =============================================================================
+
+pub fn fanout_exchange_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare a fanout exchange
+  let assert Ok(Nil) =
+    carotte.Exchange(
+      ..carotte.exchange("fanout_test_exchange"),
+      exchange_type: carotte.Fanout,
+    )
+    |> carotte.declare_exchange(channel)
+
+  // Declare two queues and bind them to the fanout exchange
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("fanout_queue_1"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("fanout_queue_2"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "fanout_queue_1")
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "fanout_queue_2")
+
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "fanout_queue_1",
+      exchange: "fanout_test_exchange",
+      routing_key: "",
+    )
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "fanout_queue_2",
+      exchange: "fanout_test_exchange",
+      routing_key: "",
+    )
+
+  // Start consumers
+  let consumers = process.new_name("fanout_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject1 = process.new_subject()
+  let subject2 = process.new_subject()
+
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "fanout_queue_1",
+      callback: fn(payload, _) { process.send(subject1, payload.payload) },
+    )
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "fanout_queue_2",
+      callback: fn(payload, _) { process.send(subject2, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  // Publish to fanout exchange - should go to BOTH queues
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "fanout_test_exchange",
+      routing_key: "ignored",
+      payload: "fanout message",
+      options: [],
+    )
+
+  // Both consumers should receive the message
+  let assert Ok("fanout message") = process.receive(subject1, 2000)
+  let assert Ok("fanout message") = process.receive(subject2, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn topic_exchange_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare a topic exchange
+  let assert Ok(Nil) =
+    carotte.Exchange(
+      ..carotte.exchange("topic_test_exchange"),
+      exchange_type: carotte.Topic,
+    )
+    |> carotte.declare_exchange(channel)
+
+  // Declare queues with different topic patterns
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("topic_queue_all"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("topic_queue_logs"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("topic_queue_error"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_all")
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_logs")
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_error")
+
+  // Bind with different patterns
+  // # matches zero or more words
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "topic_queue_all",
+      exchange: "topic_test_exchange",
+      routing_key: "#",
+    )
+  // *.logs matches any.logs
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "topic_queue_logs",
+      exchange: "topic_test_exchange",
+      routing_key: "*.logs",
+    )
+  // error.* matches error.anything
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "topic_queue_error",
+      exchange: "topic_test_exchange",
+      routing_key: "error.*",
+    )
+
+  // Start consumers
+  let consumers = process.new_name("topic_test_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject_all = process.new_subject()
+  let subject_logs = process.new_subject()
+  let subject_error = process.new_subject()
+
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "topic_queue_all",
+      callback: fn(payload, _) { process.send(subject_all, payload.payload) },
+    )
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "topic_queue_logs",
+      callback: fn(payload, _) { process.send(subject_logs, payload.payload) },
+    )
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "topic_queue_error",
+      callback: fn(payload, _) { process.send(subject_error, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  // Publish with routing key "app.logs" - should match # and *.logs
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "topic_test_exchange",
+      routing_key: "app.logs",
+      payload: "app log message",
+      options: [],
+    )
+
+  // Publish with routing key "error.critical" - should match # and error.*
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "topic_test_exchange",
+      routing_key: "error.critical",
+      payload: "error message",
+      options: [],
+    )
+
+  // All queue gets both messages
+  let assert Ok("app log message") = process.receive(subject_all, 2000)
+  let assert Ok("error message") = process.receive(subject_all, 2000)
+
+  // Logs queue gets app.logs
+  let assert Ok("app log message") = process.receive(subject_logs, 2000)
+
+  // Error queue gets error.critical
+  let assert Ok("error message") = process.receive(subject_error, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn headers_exchange_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare a headers exchange
+  let assert Ok(Nil) =
+    carotte.Exchange(
+      ..carotte.exchange("headers_test_exchange_type"),
+      exchange_type: carotte.Headers,
+    )
+    |> carotte.declare_exchange(channel)
+
+  // For headers exchange, we need to use the AMQP-level arguments for binding
+  // which isn't directly supported by the current API (bind_queue doesn't expose arguments)
+  // But we can at least test that the exchange is created correctly
+  // and basic message flow works
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("headers_exchange_queue"), channel)
+  let assert Ok(_) =
+    carotte.purge_queue(channel:, queue: "headers_exchange_queue")
+
+  // Bind with empty routing key (headers exchange ignores routing key)
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "headers_exchange_queue",
+      exchange: "headers_test_exchange_type",
+      routing_key: "",
+    )
+
+  // Start consumer
+  let consumers = process.new_name("headers_exchange_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "headers_exchange_queue",
+      callback: fn(payload, _) { process.send(subject, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  // Publish with headers
+  let headers =
+    carotte.headers_from_list([#("x-match", carotte.StringHeader("all"))])
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "headers_test_exchange_type",
+      routing_key: "",
+      payload: "headers exchange message",
+      options: [carotte.MessageHeaders(headers)],
+    )
+
+  let assert Ok("headers exchange message") = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// ASYNC OPERATIONS TESTS
+// =============================================================================
+
+pub fn declare_exchange_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare exchange asynchronously
+  let assert Ok(Nil) =
+    carotte.exchange("async_declare_exchange")
+    |> carotte.declare_exchange_async(channel)
+
+  // Small delay to let async operation complete
+  process.sleep(100)
+
+  // Verify exchange exists by redeclaring it synchronously
+  let assert Ok(Nil) =
+    carotte.exchange("async_declare_exchange")
+    |> carotte.declare_exchange(channel)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn delete_exchange_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // First declare an exchange
+  let assert Ok(Nil) =
+    carotte.exchange("async_delete_exchange")
+    |> carotte.declare_exchange(channel)
+
+  // Delete asynchronously
+  let assert Ok(Nil) =
+    carotte.delete_exchange_async(
+      channel:,
+      exchange: "async_delete_exchange",
+      if_unused: False,
+    )
+
+  // Small delay
+  process.sleep(100)
+
+  // Need a new channel since the previous one might be affected
+  let assert Ok(channel2) = carotte.open_channel(client)
+
+  // Verify exchange is gone by trying to bind to it (should fail)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("async_delete_test_queue"), channel2)
+  let result =
+    carotte.bind_queue(
+      channel: channel2,
+      queue: "async_delete_test_queue",
+      exchange: "async_delete_exchange",
+      routing_key: "",
+    )
+
+  // Should fail because exchange doesn't exist
+  let assert Error(carotte.QueueNotFound(_)) = result
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn bind_exchange_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Create source and destination exchanges
+  let assert Ok(Nil) =
+    carotte.exchange("async_bind_source")
+    |> carotte.declare_exchange(channel)
+  let assert Ok(Nil) =
+    carotte.exchange("async_bind_dest")
+    |> carotte.declare_exchange(channel)
+
+  // Bind asynchronously
+  let assert Ok(Nil) =
+    carotte.bind_exchange_async(
+      channel:,
+      source: "async_bind_source",
+      destination: "async_bind_dest",
+      routing_key: "test.key",
+    )
+
+  process.sleep(100)
+
+  // Verify binding works by publishing through the chain
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("async_bind_queue"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "async_bind_queue")
+  let assert Ok(Nil) =
+    carotte.bind_queue(
+      channel:,
+      queue: "async_bind_queue",
+      exchange: "async_bind_dest",
+      routing_key: "test.key",
+    )
+
+  let consumers = process.new_name("async_bind_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "async_bind_queue",
+      callback: fn(payload, _) { process.send(subject, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  // Publish to source - should flow through to destination and then to queue
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "async_bind_source",
+      routing_key: "test.key",
+      payload: "async bind test",
+      options: [],
+    )
+
+  let assert Ok("async bind test") = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn unbind_exchange_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Create and bind exchanges
+  let assert Ok(Nil) =
+    carotte.exchange("async_unbind_source")
+    |> carotte.declare_exchange(channel)
+  let assert Ok(Nil) =
+    carotte.exchange("async_unbind_dest")
+    |> carotte.declare_exchange(channel)
+  let assert Ok(Nil) =
+    carotte.bind_exchange(
+      channel:,
+      source: "async_unbind_source",
+      destination: "async_unbind_dest",
+      routing_key: "unbind.key",
+    )
+
+  // Unbind asynchronously
+  let assert Ok(Nil) =
+    carotte.unbind_exchange_async(
+      channel:,
+      source: "async_unbind_source",
+      destination: "async_unbind_dest",
+      routing_key: "unbind.key",
+    )
+
+  process.sleep(100)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn bind_queue_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Create exchange and queue
+  let assert Ok(Nil) =
+    carotte.exchange("async_queue_bind_exchange")
+    |> carotte.declare_exchange(channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("async_queue_bind_queue"), channel)
+  let assert Ok(_) =
+    carotte.purge_queue(channel:, queue: "async_queue_bind_queue")
+
+  // Bind queue asynchronously
+  let assert Ok(Nil) =
+    carotte.bind_queue_async(
+      channel:,
+      queue: "async_queue_bind_queue",
+      exchange: "async_queue_bind_exchange",
+      routing_key: "async.route",
+    )
+
+  process.sleep(100)
+
+  // Verify by consuming
+  let consumers = process.new_name("async_queue_bind_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "async_queue_bind_queue",
+      callback: fn(payload, _) { process.send(subject, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "async_queue_bind_exchange",
+      routing_key: "async.route",
+      payload: "async queue bind test",
+      options: [],
+    )
+
+  let assert Ok("async queue bind test") = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn unsubscribe_async_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("async_unsubscribe_queue"), channel)
+  let assert Ok(_) =
+    carotte.purge_queue(channel:, queue: "async_unsubscribe_queue")
+
+  let consumers = process.new_name("async_unsubscribe_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let assert Ok(consumer_tag) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "async_unsubscribe_queue",
+      callback: fn(_, _) { Nil },
+    )
+
+  process.sleep(100)
+
+  // Unsubscribe asynchronously
+  let assert Ok(Nil) = carotte.unsubscribe_async(channel:, consumer_tag:)
+
+  process.sleep(100)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn delete_queue_async_full_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Create a queue
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("async_delete_queue_full"), channel)
+
+  // Delete asynchronously
+  let assert Ok(Nil) =
+    carotte.delete_queue_async(
+      channel:,
+      queue: "async_delete_queue_full",
+      if_unused: False,
+      if_empty: False,
+    )
+
+  process.sleep(100)
+
+  // Verify queue is gone by trying to get status
+  let assert Ok(ch2) = carotte.open_channel(client)
+  let assert Error(carotte.QueueNotFound(_)) =
+    carotte.queue_status(channel: ch2, queue: "async_delete_queue_full")
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// MISSING PUBLISH OPTIONS TESTS
+// =============================================================================
+
+pub fn publish_with_reply_to_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("reply_to_queue"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "reply_to_queue")
+
+  let consumers = process.new_name("reply_to_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "reply_to_queue",
+      callback: fn(payload, _) {
+        // Check if ReplyTo is in the properties
+        let has_reply_to =
+          list.any(payload.properties, fn(prop) {
+            case prop {
+              carotte.ReplyTo("my_reply_queue") -> True
+              _ -> False
+            }
+          })
+        process.send(subject, has_reply_to)
+      },
+    )
+
+  process.sleep(200)
+
+  // Publish with ReplyTo option
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "",
+      routing_key: "reply_to_queue",
+      payload: "test",
+      options: [carotte.ReplyTo("my_reply_queue")],
+    )
+
+  let assert Ok(True) = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn publish_with_user_id_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("user_id_queue"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "user_id_queue")
+
+  let consumers = process.new_name("user_id_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "user_id_queue",
+      callback: fn(payload, _) {
+        let has_user_id =
+          list.any(payload.properties, fn(prop) {
+            case prop {
+              carotte.UserId("guest") -> True
+              _ -> False
+            }
+          })
+        process.send(subject, has_user_id)
+      },
+    )
+
+  process.sleep(200)
+
+  // Publish with UserId option (must match connection user for RabbitMQ)
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "",
+      routing_key: "user_id_queue",
+      payload: "test",
+      options: [carotte.UserId("guest")],
+    )
+
+  let assert Ok(True) = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn publish_with_app_id_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("app_id_queue"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "app_id_queue")
+
+  let consumers = process.new_name("app_id_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "app_id_queue",
+      callback: fn(payload, _) {
+        let has_app_id =
+          list.any(payload.properties, fn(prop) {
+            case prop {
+              carotte.AppId("my_test_app") -> True
+              _ -> False
+            }
+          })
+        process.send(subject, has_app_id)
+      },
+    )
+
+  process.sleep(200)
+
+  // Publish with AppId option
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "",
+      routing_key: "app_id_queue",
+      payload: "test",
+      options: [carotte.AppId("my_test_app")],
+    )
+
+  let assert Ok(True) = process.receive(subject, 2000)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// EMPTY HEADERS AND EDGE CASES
+// =============================================================================
+
+pub fn empty_headers_test() {
+  let headers = carotte.empty_headers()
+  let list = carotte.headers_to_list(headers)
+  assert list == []
+}
+
+pub fn headers_roundtrip_test() {
+  // Test that headers can be converted to list and back
+  let original = [
+    #("key1", carotte.StringHeader("value1")),
+    #("key2", carotte.IntHeader(42)),
+    #("key3", carotte.BoolHeader(True)),
+    #("key4", carotte.FloatHeader(3.14)),
+  ]
+
+  let headers = carotte.headers_from_list(original)
+  let result = carotte.headers_to_list(headers)
+
+  // Verify all headers are present (order may differ)
+  assert list.length(result) == 4
+
+  let assert Ok(#(_, carotte.StringHeader("value1"))) =
+    list.find(result, fn(h) { h.0 == "key1" })
+
+  let assert Ok(#(_, carotte.IntHeader(42))) =
+    list.find(result, fn(h) { h.0 == "key2" })
+
+  let assert Ok(#(_, carotte.BoolHeader(True))) =
+    list.find(result, fn(h) { h.0 == "key3" })
+
+  let assert Ok(#(_, carotte.FloatHeader(f))) =
+    list.find(result, fn(h) { h.0 == "key4" })
+  assert f >. 3.13 && f <. 3.15
+}
+
+pub fn nested_list_headers_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("nested_list_headers_queue"), channel)
+  let assert Ok(_) =
+    carotte.purge_queue(channel:, queue: "nested_list_headers_queue")
+
+  let consumers = process.new_name("nested_list_headers_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let headers_subject = process.new_subject()
+  let assert Ok(_) =
+    carotte.subscribe(
+      connection,
+      channel:,
+      queue: "nested_list_headers_queue",
+      callback: fn(payload, _) {
+        let headers = carotte.headers_to_list(payload.headers)
+        process.send(headers_subject, headers)
+      },
+    )
+
+  process.sleep(200)
+
+  // Create nested list headers
+  let headers =
+    carotte.headers_from_list([
+      #(
+        "nested",
+        carotte.ListHeader([
+          carotte.ListHeader([
+            carotte.StringHeader("deep1"),
+            carotte.StringHeader("deep2"),
+          ]),
+          carotte.IntHeader(999),
+        ]),
+      ),
+    ])
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "",
+      routing_key: "nested_list_headers_queue",
+      payload: "nested test",
+      options: [carotte.MessageHeaders(headers)],
+    )
+
+  let assert Ok(received_headers) = process.receive(headers_subject, 2000)
+
+  // Verify nested structure
+  assert list.length(received_headers) == 1
+  let assert Ok(#("nested", carotte.ListHeader(outer_list))) =
+    list.find(received_headers, fn(h) { h.0 == "nested" })
+
+  assert list.length(outer_list) == 2
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// SUBSCRIBE WITH EMPTY OPTIONS (DEFAULT AUTO_ACK)
+// =============================================================================
+
+pub fn subscribe_with_empty_options_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("empty_options_queue"), channel)
+  let assert Ok(_) = carotte.purge_queue(channel:, queue: "empty_options_queue")
+
+  let consumers = process.new_name("empty_options_consumers")
+  let assert Ok(connection) = carotte.start_consumer(consumers)
+
+  let subject = process.new_subject()
+
+  // Subscribe with empty options list - should default to auto_ack=True
+  let assert Ok(consumer_tag) =
+    carotte.subscribe_with_options(
+      connection,
+      channel:,
+      queue: "empty_options_queue",
+      options: [],
+      callback: fn(payload, _) { process.send(subject, payload.payload) },
+    )
+
+  process.sleep(200)
+
+  let assert Ok(_) =
+    carotte.publish(
+      channel:,
+      exchange: "",
+      routing_key: "empty_options_queue",
+      payload: "auto ack message",
+      options: [],
+    )
+
+  let assert Ok("auto ack message") = process.receive(subject, 2000)
+
+  // Queue should be empty since auto_ack is enabled
+  process.sleep(100)
+  let assert Ok(carotte.Queue(_, 0, _)) =
+    carotte.queue_status(channel:, queue: "empty_options_queue")
+
+  let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag:)
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// DURABLE AND AUTO-DELETE OPTIONS
+// =============================================================================
+
+pub fn durable_queue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare a durable queue
+  let assert Ok(carotte.Queue("durable_test_queue", _, _)) =
+    carotte.QueueConfig(..carotte.queue("durable_test_queue"), durable: True)
+    |> carotte.declare_queue(channel)
+
+  // Cleanup
+  let assert Ok(_) =
+    carotte.delete_queue(
+      channel:,
+      queue: "durable_test_queue",
+      if_unused: False,
+      if_empty: False,
+    )
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn auto_delete_queue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare an auto-delete queue
+  let assert Ok(carotte.Queue("auto_delete_test_queue", _, _)) =
+    carotte.QueueConfig(
+      ..carotte.queue("auto_delete_test_queue"),
+      auto_delete: True,
+    )
+    |> carotte.declare_queue(channel)
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn durable_exchange_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare a durable exchange
+  let assert Ok(Nil) =
+    carotte.Exchange(
+      ..carotte.exchange("durable_test_exchange"),
+      durable: True,
+    )
+    |> carotte.declare_exchange(channel)
+
+  // Cleanup
+  let assert Ok(Nil) =
+    carotte.delete_exchange(
+      channel:,
+      exchange: "durable_test_exchange",
+      if_unused: False,
+    )
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+pub fn internal_exchange_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(channel) = carotte.open_channel(client)
+
+  // Declare an internal exchange (can only receive messages from other exchanges)
+  let assert Ok(Nil) =
+    carotte.Exchange(
+      ..carotte.exchange("internal_test_exchange"),
+      internal: True,
+    )
+    |> carotte.declare_exchange(channel)
+
+  // Cleanup
+  let assert Ok(Nil) =
+    carotte.delete_exchange(
+      channel:,
+      exchange: "internal_test_exchange",
+      if_unused: False,
+    )
+
   let assert Ok(_) = carotte.close(client)
 }

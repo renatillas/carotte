@@ -314,3 +314,278 @@ pub fn ack_channel_closed_test() {
   // Try to ack on closed channel (delivery_tag doesn't matter since channel is closed)
   let assert Error(carotte.ConsumeChannelClosed(_)) = carotte.ack(ch, 1, False)
 }
+
+// Test nack on closed channel
+pub fn nack_channel_closed_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Close the connection
+  let assert Ok(Nil) = carotte.close(client)
+
+  // Try to nack on closed channel
+  let assert Error(carotte.ConsumeChannelClosed(_)) =
+    carotte.nack(ch, 1, False, True)
+}
+
+// Test reject on closed channel
+pub fn reject_channel_closed_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Close the connection
+  let assert Ok(Nil) = carotte.close(client)
+
+  // Try to reject on closed channel
+  let assert Error(carotte.ConsumeChannelClosed(_)) =
+    carotte.reject(ch, 1, True)
+}
+
+// =============================================================================
+// PUBLISH NO ROUTE ERROR
+// =============================================================================
+
+// Note: AMQP protocol returns "no route" errors asynchronously via basic.return.
+// The publish call itself succeeds - the broker notifies about no-route via a
+// callback mechanism. This library doesn't currently expose return handlers,
+// so we test that a mandatory publish to an unrouted exchange still succeeds
+// at the protocol level (the warning is logged by the AMQP client).
+pub fn publish_no_route_async_behavior_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Declare exchange but DON'T bind any queue to it
+  let assert Ok(_) =
+    carotte.declare_exchange(carotte.exchange("no_route_test_exchange"), ch)
+
+  // Publish with mandatory flag - the publish itself succeeds
+  // The broker will send basic.return asynchronously (logged as warning)
+  let assert Ok(Nil) =
+    carotte.publish(
+      channel: ch,
+      exchange: "no_route_test_exchange",
+      routing_key: "non.existent.route",
+      payload: "this will trigger async return",
+      options: [carotte.Mandatory(True)],
+    )
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// =============================================================================
+// DESCRIBE ERROR FUNCTIONS
+// =============================================================================
+
+pub fn describe_connection_error_test() {
+  // Test all ConnectionError variants
+  assert carotte.describe_connection_error(carotte.ConnectionBlocked)
+    == "Connection blocked"
+
+  assert carotte.describe_connection_error(carotte.ConnectionClosed)
+    == "Connection closed"
+
+  assert carotte.describe_connection_error(
+    carotte.ConnectionAuthFailure("bad creds"),
+  )
+    == "Auth failure: bad creds"
+
+  assert carotte.describe_connection_error(
+    carotte.ConnectionRefused("server down"),
+  )
+    == "Connection refused: server down"
+
+  assert carotte.describe_connection_error(
+    carotte.ConnectionTimeout("timed out"),
+  )
+    == "Connection timeout: timed out"
+
+  assert carotte.describe_connection_error(carotte.NotConnected)
+    == "Not connected"
+
+  assert carotte.describe_connection_error(carotte.AlreadyConnected)
+    == "Already connected"
+
+  assert carotte.describe_connection_error(
+    carotte.ConnectionUnknownError("mystery"),
+  )
+    == "Unknown error: mystery"
+
+  // Test nested ReconnectionFailed
+  assert carotte.describe_connection_error(
+    carotte.ReconnectionFailed(carotte.ConnectionRefused("refused")),
+  )
+    == "Reconnection failed: Connection refused: refused"
+}
+
+pub fn describe_channel_error_test() {
+  assert carotte.describe_channel_error(carotte.ChannelClosed("reason"))
+    == "Channel closed: reason"
+
+  assert carotte.describe_channel_error(carotte.ChannelProcessNotFound)
+    == "Channel process not found"
+
+  assert carotte.describe_channel_error(carotte.ChannelConnectionClosed)
+    == "Connection closed"
+
+  assert carotte.describe_channel_error(carotte.ChannelUnknownError("unknown"))
+    == "Unknown error: unknown"
+}
+
+pub fn describe_exchange_error_test() {
+  assert carotte.describe_exchange_error(carotte.ExchangeNotFound("not found"))
+    == "Exchange not found: not found"
+
+  assert carotte.describe_exchange_error(
+    carotte.ExchangeAccessRefused("refused"),
+  )
+    == "Access refused: refused"
+
+  assert carotte.describe_exchange_error(
+    carotte.ExchangePreconditionFailed("failed"),
+  )
+    == "Precondition failed: failed"
+
+  assert carotte.describe_exchange_error(carotte.ExchangeChannelClosed("closed"))
+    == "Channel closed: closed"
+
+  assert carotte.describe_exchange_error(carotte.ExchangeUnknownError("unknown"))
+    == "Unknown error: unknown"
+}
+
+pub fn describe_queue_error_test() {
+  assert carotte.describe_queue_error(carotte.QueueNotFound("not found"))
+    == "Queue not found: not found"
+
+  assert carotte.describe_queue_error(carotte.QueueAccessRefused("refused"))
+    == "Access refused: refused"
+
+  assert carotte.describe_queue_error(carotte.QueuePreconditionFailed("failed"))
+    == "Precondition failed: failed"
+
+  assert carotte.describe_queue_error(carotte.QueueResourceLocked("locked"))
+    == "Resource locked: locked"
+
+  assert carotte.describe_queue_error(carotte.QueueChannelClosed("closed"))
+    == "Channel closed: closed"
+
+  assert carotte.describe_queue_error(carotte.QueueUnknownError("unknown"))
+    == "Unknown error: unknown"
+}
+
+pub fn describe_publish_error_test() {
+  assert carotte.describe_publish_error(carotte.PublishNoRoute("no route"))
+    == "No route: no route"
+
+  assert carotte.describe_publish_error(carotte.PublishChannelClosed("closed"))
+    == "Channel closed: closed"
+
+  assert carotte.describe_publish_error(carotte.PublishUnknownError("unknown"))
+    == "Unknown error: unknown"
+}
+
+pub fn describe_consume_error_test() {
+  assert carotte.describe_consume_error(carotte.ConsumeInitTimeout)
+    == "Consumer init timeout"
+
+  assert carotte.describe_consume_error(carotte.ConsumeInitFailed("failed"))
+    == "Consumer init failed: failed"
+
+  assert carotte.describe_consume_error(carotte.ConsumeProcessNotFound)
+    == "Consumer process not found"
+
+  assert carotte.describe_consume_error(carotte.ConsumeChannelClosed("closed"))
+    == "Channel closed: closed"
+
+  assert carotte.describe_consume_error(carotte.ConsumeUnknownError("unknown"))
+    == "Unknown error: unknown"
+}
+
+// =============================================================================
+// QUEUE ERRORS - ADDITIONAL COVERAGE
+// =============================================================================
+
+// Test queue not found when getting status of non-existent queue
+pub fn queue_not_found_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Try to get status of a queue that doesn't exist
+  let assert Error(carotte.QueueNotFound(_)) =
+    carotte.queue_status(channel: ch, queue: "definitely_not_existing_queue_xyz")
+}
+
+// Test purge on non-existent queue
+pub fn purge_nonexistent_queue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Try to purge a queue that doesn't exist
+  let assert Error(carotte.QueueNotFound(_)) =
+    carotte.purge_queue(channel: ch, queue: "nonexistent_purge_queue")
+}
+
+// Test unbind queue from non-existent exchange
+// Note: RabbitMQ treats unbind as idempotent - unbinding from non-existent
+// exchange silently succeeds (this is documented AMQP behavior)
+pub fn unbind_queue_idempotent_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Create a queue
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("unbind_idempotent_queue"), ch)
+
+  // Unbind from non-existent exchange - should succeed (idempotent)
+  let assert Ok(Nil) =
+    carotte.unbind_queue(
+      channel: ch,
+      queue: "unbind_idempotent_queue",
+      exchange: "nonexistent_exchange_for_unbind",
+      routing_key: "",
+    )
+
+  let assert Ok(_) = carotte.close(client)
+}
+
+// Test delete non-empty queue with if_empty flag
+pub fn delete_nonempty_queue_test() {
+  let assert Ok(client) = carotte.start(carotte.default_client())
+  let assert Ok(ch) = carotte.open_channel(client)
+
+  // Create a queue
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.queue("nonempty_delete_queue"), ch)
+
+  // Publish a message to it
+  let assert Ok(_) =
+    carotte.publish(
+      channel: ch,
+      exchange: "",
+      routing_key: "nonempty_delete_queue",
+      payload: "test message",
+      options: [],
+    )
+
+  // Try to delete with if_empty=True - should fail
+  let assert Error(carotte.QueuePreconditionFailed(_)) =
+    carotte.delete_queue(
+      channel: ch,
+      queue: "nonempty_delete_queue",
+      if_unused: False,
+      if_empty: True,
+    )
+
+  // Need a new channel since precondition failure closes the channel
+  let assert Ok(ch2) = carotte.open_channel(client)
+
+  // Cleanup - delete without constraints
+  let assert Ok(_) =
+    carotte.delete_queue(
+      channel: ch2,
+      queue: "nonempty_delete_queue",
+      if_unused: False,
+      if_empty: False,
+    )
+
+  let assert Ok(_) = carotte.close(client)
+}
