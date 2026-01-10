@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: `ClientConfig.connection_timeout` now uses `Duration` instead of `Int` (milliseconds)
 - **BREAKING**: `PublishOption.Expiration` now uses `Duration` instead of `String`
 - **BREAKING**: `PublishOption.Timestamp` now uses `timestamp.Timestamp` instead of `Int`
+- **BREAKING**: `Payload.payload` and `publish` payload parameter now use `BitArray` instead of `String` to support binary data (protobuf, msgpack, images, etc.)
 
 ### Removed
 

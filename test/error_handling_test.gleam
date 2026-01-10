@@ -238,7 +238,7 @@ pub fn publish_channel_closed_test() {
       channel: ch,
       exchange: "",
       routing_key: "test",
-      payload: "test message",
+      payload: <<"test message">>,
       options: [],
     )
 }
@@ -365,7 +365,7 @@ pub fn publish_no_route_async_behavior_test() {
       channel: ch,
       exchange: "no_route_test_exchange",
       routing_key: "non.existent.route",
-      payload: "this will trigger async return",
+      payload: <<"this will trigger async return">>,
       options: [carotte.Mandatory(True)],
     )
 
@@ -565,7 +565,7 @@ pub fn delete_nonempty_queue_test() {
       channel: ch,
       exchange: "",
       routing_key: "nonempty_delete_queue",
-      payload: "test message",
+      payload: <<"test message">>,
       options: [],
     )
 

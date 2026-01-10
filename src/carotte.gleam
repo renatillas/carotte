@@ -1,119 +1,4 @@
-//// <script>
-//// const docs = [
-////   {
-////     header: "Connection",
-////     types: ["Client", "ClientConfig", "ConnectionState", "DisconnectReason", "ConnectionEvent"],
-////     functions: ["default_client", "start", "close", "is_connected", "connection_state", "reconnect"]
-////   },
-////   {
-////     header: "Channels",
-////     types: ["Channel"],
-////     functions: ["open_channel"]
-////   },
-////   {
-////     header: "Exchanges",
-////     types: ["Exchange", "ExchangeType"],
-////     functions: ["exchange", "declare_exchange", "declare_exchange_async", "delete_exchange", "delete_exchange_async", "bind_exchange", "bind_exchange_async", "unbind_exchange", "unbind_exchange_async"]
-////   },
-////   {
-////     header: "Queues",
-////     types: ["QueueConfig", "Queue", "Deliver", "Payload", "QueueOption"],
-////     functions: ["queue", "declare_queue", "declare_queue_async", "delete_queue", "delete_queue_async", "bind_queue", "bind_queue_async", "unbind_queue", "purge_queue", "purge_queue_async", "queue_status"]
-////   },
-////   {
-////     header: "Publishing",
-////     types: ["HeaderList", "HeaderValue", "PublishOption"],
-////     functions: ["publish", "empty_headers", "headers_from_list", "headers_to_list"]
-////   },
-////   {
-////     header: "Consuming",
-////     types: ["Consumer", "ConsumerSupervisorMessage"],
-////     functions: ["start_consumer", "consumer_supervised", "named_consumer", "subscribe", "subscribe_with_options", "unsubscribe", "unsubscribe_async", "ack", "ack_single", "nack", "nack_single", "reject"]
-////   },
-////   {
-////     header: "Errors",
-////     types: ["ConnectionError", "ChannelError", "ExchangeError", "QueueError", "PublishError", "ConsumeError"],
-////     functions: ["describe_connection_error", "describe_channel_error", "describe_exchange_error", "describe_queue_error", "describe_publish_error", "describe_consume_error"]
-////   }
-//// ]
-////
-//// const callback = () => {
-////   const sidebar = document.querySelector(".sidebar")
-////   const moduleMembers = document.querySelector(".module-members")
-////
-////   // Find the Types and Values headings in sidebar
-////   const sidebarH2s = sidebar.querySelectorAll("h2")
-////   let typesH2, valuesH2
-////   sidebarH2s.forEach(h2 => {
-////     if (h2.textContent === "Types") typesH2 = h2
-////     if (h2.textContent === "Values") valuesH2 = h2
-////   })
-////
-////   // Get the original lists
-////   const typesUl = typesH2?.nextElementSibling
-////   const valuesUl = valuesH2?.nextElementSibling
-////   if (!typesUl || !valuesUl) return
-////
-////   // Create new sidebar content
-////   const newSidebarContent = document.createDocumentFragment()
-////   const newMainContent = document.createDocumentFragment()
-////
-////   for (const section of docs) {
-////     // Sidebar section header
-////     const sidebarHeader = document.createElement("h2")
-////     sidebarHeader.textContent = section.header
-////     newSidebarContent.append(sidebarHeader)
-////
-////     // Sidebar list
-////     const sidebarList = document.createElement("ul")
-////     newSidebarContent.append(sidebarList)
-////
-////     // Main content section header
-////     const mainHeader = document.createElement("h1")
-////     mainHeader.className = "module-member-kind"
-////     mainHeader.textContent = section.header
-////     newMainContent.append(mainHeader)
-////
-////     // Move types
-////     for (const name of (section.types || [])) {
-////       const sidebarItem = typesUl.querySelector(`li:has(a[href="#${name}"])`)
-////       const member = moduleMembers.querySelector(`.member:has(h2#${name})`)
-////       if (sidebarItem) sidebarList.append(sidebarItem)
-////       if (member) newMainContent.append(member)
-////     }
-////
-////     // Move functions
-////     for (const name of (section.functions || [])) {
-////       const sidebarItem = valuesUl.querySelector(`li:has(a[href="#${name}"])`)
-////       const member = moduleMembers.querySelector(`.member:has(h2#${name})`)
-////       if (sidebarItem) sidebarList.append(sidebarItem)
-////       if (member) newMainContent.append(member)
-////     }
-////   }
-////
-////   // Replace Types heading and list
-////   typesH2.replaceWith(newSidebarContent)
-////   typesUl.remove()
-////   valuesH2.remove()
-////   valuesUl.remove()
-////
-////   // Replace main content
-////   const moduleTypes = document.querySelector("#module-types")
-////   const moduleValues = document.querySelector("#module-values")
-////   if (moduleTypes) {
-////     moduleTypes.replaceWith(newMainContent)
-////   }
-////   if (moduleValues) {
-////     moduleValues.remove()
-////   }
-//// }
-////
-//// document.readyState !== "loading"
-////   ? callback()
-////   : document.addEventListener("DOMContentLoaded", callback, { once: true })
-//// </script>
-////
-//// # Carotte
+//// # Carotte 🥕
 ////
 //// A type-safe RabbitMQ client for Gleam that provides a clean, idiomatic interface
 //// for message queue operations on the Erlang VM.
@@ -122,6 +7,7 @@
 ////
 //// ```gleam
 //// import carotte
+//// import gleam/bit_array
 //// import gleam/erlang/process
 //// import gleam/io
 ////
@@ -139,11 +25,12 @@
 ////   let consumers = process.new_name("consumers")
 ////   let assert Ok(consumer) = carotte.start_consumer(consumers)
 ////   let assert Ok(_) = carotte.subscribe(consumer, channel: ch, queue: "my_queue", callback: fn(msg, _) {
-////     io.println("Received: " <> msg.payload)
+////     let assert Ok(text) = bit_array.to_string(msg.payload)
+////     io.println("Received: " <> text)
 ////   })
 ////
-////   // Publish a message
-////   let assert Ok(_) = carotte.publish(channel: ch, exchange: "my_exchange", routing_key: "", payload: "Hello!", options: [])
+////   // Publish a message (payload is BitArray)
+////   let assert Ok(_) = carotte.publish(channel: ch, exchange: "my_exchange", routing_key: "", payload: <<"Hello!">>, options: [])
 //// }
 //// ```
 ////
@@ -369,9 +256,7 @@ pub type ConnectionEvent {
 /// Represents an AMQP channel within a connection.
 /// Channels are lightweight connections that share a single TCP connection.
 /// Most AMQP operations are performed on channels.
-pub type Channel {
-  Channel(pid: Pid)
-}
+pub type Channel
 
 // =============================================================================
 // EXCHANGE TYPES
@@ -453,8 +338,8 @@ pub type Deliver {
 /// Contains the message body, AMQP properties, and custom headers.
 pub type Payload {
   Payload(
-    /// The message body as a string
-    payload: String,
+    /// The message body as raw bytes
+    payload: BitArray,
     /// AMQP message properties (content type, correlation ID, etc.)
     properties: List(PublishOption),
     /// Custom headers attached to the message
@@ -923,16 +808,16 @@ fn do_unbind_exchange(
 ///
 /// To customize, use record update syntax:
 /// ```gleam
-/// QueueConfig(..queue("my_queue"), durable: True, exclusive: True)
+/// QueueConfig(..default_queue("my_queue"), durable: True, exclusive: True)
 /// ```
 ///
 /// For an auto-generated queue name, pass an empty string:
 /// ```gleam
-/// queue("")
+/// default_queue("")
 /// |> declare_queue(channel)
 /// // Returns Queue with broker-generated name like "amq.gen-..."
 /// ```
-pub fn queue(name: String) -> QueueConfig {
+pub fn default_queue(name: String) -> QueueConfig {
   QueueConfig(
     name:,
     passive: False,
@@ -1126,12 +1011,8 @@ fn header_value_to_header_tuple(
     IntHeader(inner) -> #(atom.create("long"), to_dynamic(inner))
     StringHeader(inner) -> #(atom.create("longstr"), to_dynamic(inner))
     ListHeader(inner) -> {
-      let mapped =
-        list.map(inner, fn(v) {
-          let #(type_atom, val) = header_value_to_header_tuple(v)
-          #(type_atom, val)
-        })
-      #(atom.create("array"), to_dynamic(mapped))
+      let mapped = list.map(inner, header_value_to_header_tuple) |> to_dynamic
+      #(atom.create("array"), mapped)
     }
   }
 }
@@ -1236,7 +1117,7 @@ pub fn publish(
   channel channel: Channel,
   exchange exchange: String,
   routing_key routing_key: String,
-  payload payload: String,
+  payload payload: BitArray,
   options options: List(PublishOption),
 ) -> Result(Nil, PublishError) {
   let ffi_options = list.map(options, publish_option_to_tuple)
@@ -1284,7 +1165,7 @@ fn do_publish(
   channel: Channel,
   exchange: String,
   routing_key: String,
-  payload: String,
+  payload: BitArray,
   publish_options: List(FfiOption),
 ) -> Result(Nil, PublishError)
 
@@ -1748,7 +1629,7 @@ fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
 
     let payload_decoder = {
       use properties <- decode.subfield([1, 1], payload_properties_decoder)
-      use payload <- decode.subfield([1, 2], decode.string)
+      use payload <- decode.subfield([1, 2], decode.bit_array)
       use headers <- decode.subfield([1, 1, 3], amqp_headers_decoder())
       decode.success(Payload(payload, properties, headers))
     }

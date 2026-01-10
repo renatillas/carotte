@@ -277,7 +277,7 @@ pub fn publish_test() {
       channel: channel,
       exchange: "p_exchange",
       routing_key: "",
-      payload: "test",
+      payload: <<"test">>,
       options: [],
     )
 }
@@ -299,7 +299,7 @@ pub fn publish_with_options_test() {
       channel: channel,
       exchange: "pwo_exchange",
       routing_key: "",
-      payload: "publish with options",
+      payload: <<"publish with options">>,
       options: [
         carotte.Mandatory(True),
         carotte.ContentType("text/plain"),
@@ -362,7 +362,7 @@ pub fn subscribe_test() {
       channel: channel,
       exchange: "consume_exchange",
       routing_key: "",
-      payload: "payload1",
+      payload: <<"payload1">>,
       options: [],
     )
   let assert Ok(_) =
@@ -370,13 +370,13 @@ pub fn subscribe_test() {
       channel: channel,
       exchange: "consume_exchange",
       routing_key: "",
-      payload: "payload2",
+      payload: <<"payload2">>,
       options: [],
     )
   process.sleep(1000)
 
-  let assert Ok("payload1") = process.receive(message_subject, 2000)
-  let assert Ok("payload2") = process.receive(message_subject, 2000)
+  let assert Ok(<<"payload1">>) = process.receive(message_subject, 2000)
+  let assert Ok(<<"payload2">>) = process.receive(message_subject, 2000)
 }
 
 pub fn unsubscribe_test() {
@@ -398,7 +398,7 @@ pub fn unsubscribe_test() {
       channel: channel,
       exchange: "unsubscribe_exchange",
       routing_key: "",
-      payload: "payload",
+      payload: <<"payload">>,
       options: [
         carotte.Mandatory(True),
         carotte.ContentType("text/plain"),
@@ -493,7 +493,7 @@ pub fn receive_headers_test() {
       channel: channel,
       exchange: "headers_test_exchange",
       routing_key: "",
-      payload: "test payload",
+      payload: <<"test payload">>,
       options: [carotte.MessageHeaders(headers)],
     )
   process.sleep(500)
@@ -570,7 +570,7 @@ pub fn receive_float_header_test() {
       channel: channel,
       exchange: "float_headers_test_exchange",
       routing_key: "",
-      payload: "test payload with float",
+      payload: <<"test payload with float">>,
       options: [carotte.MessageHeaders(headers)],
     )
   process.sleep(500)
@@ -661,7 +661,7 @@ pub fn receive_list_header_test() {
       channel: channel,
       exchange: "list_headers_test_exchange",
       routing_key: "",
-      payload: "test payload with list",
+      payload: <<"test payload with list">>,
       options: [carotte.MessageHeaders(headers)],
     )
   process.sleep(500)
@@ -766,12 +766,12 @@ pub fn supervised_consumer_integration_test() {
       channel:,
       exchange: "supervised_test_exchange",
       routing_key: "test.key",
-      payload: "Hello from supervised test!",
+      payload: <<"Hello from supervised test!">>,
       options: [],
     )
 
   // 10. Verify the message was received
-  let assert Ok("Hello from supervised test!") =
+  let assert Ok(<<"Hello from supervised test!">>) =
     process.receive(message_subject, 2000)
 
   // 11. Clean up - unsubscribe
@@ -837,7 +837,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       queue: queue1,
       callback: fn(payload, _) {
-        process.send(subject1, "q1:" <> payload.payload)
+        process.send(subject1, <<"q1:", payload.payload:bits>>)
       },
     )
 
@@ -848,7 +848,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       queue: queue2,
       callback: fn(payload, _) {
-        process.send(subject2, "q2:" <> payload.payload)
+        process.send(subject2, <<"q2:", payload.payload:bits>>)
       },
     )
 
@@ -861,7 +861,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       exchange: exchange1,
       routing_key: "",
-      payload: "msg1",
+      payload: <<"msg1">>,
       options: [],
     )
   let assert Ok(_) =
@@ -869,13 +869,13 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       exchange: exchange2,
       routing_key: "",
-      payload: "msg2",
+      payload: <<"msg2">>,
       options: [],
     )
 
   // 8. Verify both consumers received their messages
-  let assert Ok("q1:msg1") = process.receive(subject1, 2000)
-  let assert Ok("q2:msg2") = process.receive(subject2, 2000)
+  let assert Ok(<<"q1:msg1">>) = process.receive(subject1, 2000)
+  let assert Ok(<<"q2:msg2">>) = process.receive(subject2, 2000)
 
   // 9. Unsubscribe the first consumer while keeping the second active
   let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag: consumer_tag1)
@@ -887,12 +887,12 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       exchange: exchange2,
       routing_key: "",
-      payload: "msg3",
+      payload: <<"msg3">>,
       options: [],
     )
 
   // 11. Verify second consumer still receives messages
-  let assert Ok("q2:msg3") = process.receive(subject2, 2000)
+  let assert Ok(<<"q2:msg3">>) = process.receive(subject2, 2000)
 
   // 12. Add a third consumer to queue 1 (demonstrating dynamic addition)
   let subject3 = process.new_subject()
@@ -902,7 +902,7 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       queue: queue1,
       callback: fn(payload, _) {
-        process.send(subject3, "q1_new:" <> payload.payload)
+        process.send(subject3, <<"q1_new:", payload.payload:bits>>)
       },
     )
   process.sleep(100)
@@ -913,11 +913,11 @@ pub fn factory_supervisor_multiple_consumers_test() {
       channel:,
       exchange: exchange1,
       routing_key: "",
-      payload: "msg4",
+      payload: <<"msg4">>,
       options: [],
     )
 
-  let assert Ok("q1_new:msg4") = process.receive(subject3, 2000)
+  let assert Ok(<<"q1_new:msg4">>) = process.receive(subject3, 2000)
 
   // 14. Clean up - unsubscribe remaining consumers
   let assert Ok(_) = carotte.unsubscribe(channel:, consumer_tag: consumer_tag2)
@@ -969,12 +969,12 @@ pub fn factory_supervisor_manual_ack_test() {
       channel:,
       exchange: "",
       routing_key: queue,
-      payload: "manual_ack_msg",
+      payload: <<"manual_ack_msg">>,
       options: [],
     )
 
   // 7. Verify message was received and acked
-  let assert Ok("manual_ack_msg") = process.receive(received, 2000)
+  let assert Ok(<<"manual_ack_msg">>) = process.receive(received, 2000)
 
   // 8. Verify queue is empty (message was acked)
   process.sleep(100)
@@ -1053,13 +1053,13 @@ pub fn fanout_exchange_test() {
       channel:,
       exchange: "fanout_test_exchange",
       routing_key: "ignored",
-      payload: "fanout message",
+      payload: <<"fanout message">>,
       options: [],
     )
 
   // Both consumers should receive the message
-  let assert Ok("fanout message") = process.receive(subject1, 2000)
-  let assert Ok("fanout message") = process.receive(subject2, 2000)
+  let assert Ok(<<"fanout message">>) = process.receive(subject1, 2000)
+  let assert Ok(<<"fanout message">>) = process.receive(subject2, 2000)
 
   let assert Ok(_) = carotte.close(client)
 }
@@ -1151,7 +1151,7 @@ pub fn topic_exchange_test() {
       channel:,
       exchange: "topic_test_exchange",
       routing_key: "app.logs",
-      payload: "app log message",
+      payload: <<"app log message">>,
       options: [],
     )
 
@@ -1161,19 +1161,18 @@ pub fn topic_exchange_test() {
       channel:,
       exchange: "topic_test_exchange",
       routing_key: "error.critical",
-      payload: "error message",
+      payload: <<"error message">>,
       options: [],
     )
 
   // All queue gets both messages
-  let assert Ok("app log message") = process.receive(subject_all, 2000)
-  let assert Ok("error message") = process.receive(subject_all, 2000)
+  let assert Ok(<<"app log message">>) = process.receive(subject_all, 2000)
+  let assert Ok(<<"error message">>) = process.receive(subject_all, 2000)
 
   // Logs queue gets app.logs
-  let assert Ok("app log message") = process.receive(subject_logs, 2000)
-
+  let assert Ok(<<"app log message">>) = process.receive(subject_logs, 2000)
   // Error queue gets error.critical
-  let assert Ok("error message") = process.receive(subject_error, 2000)
+  let assert Ok(<<"error message">>) = process.receive(subject_error, 2000)
 
   let assert Ok(_) = carotte.close(client)
 }
@@ -1234,11 +1233,11 @@ pub fn headers_exchange_test() {
       channel:,
       exchange: "headers_test_exchange_type",
       routing_key: "",
-      payload: "headers exchange message",
+      payload: <<"headers exchange message">>,
       options: [carotte.MessageHeaders(headers)],
     )
 
-  let assert Ok("headers exchange message") = process.receive(subject, 2000)
+  let assert Ok(<<"headers exchange message">>) = process.receive(subject, 2000)
 
   let assert Ok(_) = carotte.close(client)
 }
@@ -1362,11 +1361,11 @@ pub fn bind_exchange_async_test() {
       channel:,
       exchange: "async_bind_source",
       routing_key: "test.key",
-      payload: "async bind test",
+      payload: <<"async bind test">>,
       options: [],
     )
 
-  let assert Ok("async bind test") = process.receive(subject, 2000)
+  let assert Ok(<<"async bind test">>) = process.receive(subject, 2000)
 
   let assert Ok(_) = carotte.close(client)
 }
@@ -1448,11 +1447,11 @@ pub fn bind_queue_async_test() {
       channel:,
       exchange: "async_queue_bind_exchange",
       routing_key: "async.route",
-      payload: "async queue bind test",
+      payload: <<"async queue bind test">>,
       options: [],
     )
 
-  let assert Ok("async queue bind test") = process.receive(subject, 2000)
+  let assert Ok(<<"async queue bind test">>) = process.receive(subject, 2000)
 
   let assert Ok(_) = carotte.close(client)
 }
@@ -1556,7 +1555,7 @@ pub fn publish_with_reply_to_test() {
       channel:,
       exchange: "",
       routing_key: "reply_to_queue",
-      payload: "test",
+      payload: <<"test">>,
       options: [carotte.ReplyTo("my_reply_queue")],
     )
 
@@ -1602,7 +1601,7 @@ pub fn publish_with_user_id_test() {
       channel:,
       exchange: "",
       routing_key: "user_id_queue",
-      payload: "test",
+      payload: <<"test">>,
       options: [carotte.UserId("guest")],
     )
 
@@ -1648,7 +1647,7 @@ pub fn publish_with_app_id_test() {
       channel:,
       exchange: "",
       routing_key: "app_id_queue",
-      payload: "test",
+      payload: <<"test">>,
       options: [carotte.AppId("my_test_app")],
     )
 
@@ -1742,7 +1741,7 @@ pub fn nested_list_headers_test() {
       channel:,
       exchange: "",
       routing_key: "nested_list_headers_queue",
-      payload: "nested test",
+      payload: <<"nested test">>,
       options: [carotte.MessageHeaders(headers)],
     )
 
@@ -1792,11 +1791,11 @@ pub fn subscribe_with_empty_options_test() {
       channel:,
       exchange: "",
       routing_key: "empty_options_queue",
-      payload: "auto ack message",
+      payload: <<"auto ack message">>,
       options: [],
     )
 
-  let assert Ok("auto ack message") = process.receive(subject, 2000)
+  let assert Ok(<<"auto ack message">>) = process.receive(subject, 2000)
 
   // Queue should be empty since auto_ack is enabled
   process.sleep(100)

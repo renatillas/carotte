@@ -22,7 +22,7 @@ pub fn manual_ack_test() {
       channel: ch,
       exchange: "test_ack_exchange",
       routing_key: "",
-      payload: "test message for ack",
+      payload: <<"test message for ack">>,
       options: [],
     )
 
@@ -47,7 +47,8 @@ pub fn manual_ack_test() {
     )
 
   // Verify message is received and processed
-  let assert Ok("test message for ack") = process.receive(message_subject, 1000)
+  let assert Ok(<<"test message for ack">>) =
+    process.receive(message_subject, 1000)
 }
 
 pub fn ack_single_test() {
@@ -74,7 +75,7 @@ pub fn ack_single_test() {
       channel: ch,
       exchange: "test_ack_single_exchange",
       routing_key: "",
-      payload: "message 1",
+      payload: <<"message 1">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -82,7 +83,7 @@ pub fn ack_single_test() {
       channel: ch,
       exchange: "test_ack_single_exchange",
       routing_key: "",
-      payload: "message 2",
+      payload: <<"message 2">>,
       options: [],
     )
 
@@ -108,8 +109,8 @@ pub fn ack_single_test() {
     )
 
   // Verify both messages are received
-  let assert Ok("message 1") = process.receive(message_subject, 1000)
-  let assert Ok("message 2") = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 1">>) = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 2">>) = process.receive(message_subject, 1000)
 }
 
 pub fn ack_multiple_test() {
@@ -136,7 +137,7 @@ pub fn ack_multiple_test() {
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
-      payload: "message 1",
+      payload: <<"message 1">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -144,7 +145,7 @@ pub fn ack_multiple_test() {
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
-      payload: "message 2",
+      payload: <<"message 2">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -152,7 +153,7 @@ pub fn ack_multiple_test() {
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
-      payload: "message 3",
+      payload: <<"message 3">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -160,7 +161,7 @@ pub fn ack_multiple_test() {
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
-      payload: "message 4",
+      payload: <<"message 4">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -168,7 +169,7 @@ pub fn ack_multiple_test() {
       channel: ch,
       exchange: "test_ack_multiple_exchange",
       routing_key: "",
-      payload: "message 5",
+      payload: <<"message 5">>,
       options: [],
     )
 
@@ -189,13 +190,13 @@ pub fn ack_multiple_test() {
       callback: fn(msg, meta) {
         process.send(message_subject, msg.payload)
         case msg.payload {
-          "message 3" -> {
+          <<"message 3">> -> {
             // Acknowledge all messages up to and including message 3
             let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, True)
             process.send(ack_subject, "acked 1-3")
             Nil
           }
-          "message 4" | "message 5" -> {
+          <<"message 4">> | <<"message 5">> -> {
             // Acknowledge remaining messages individually
             let assert Ok(Nil) = carotte.ack(ch, meta.delivery_tag, False)
             Nil
@@ -207,13 +208,13 @@ pub fn ack_multiple_test() {
     )
 
   // Verify all messages are received
-  let assert Ok("message 1") = process.receive(message_subject, 1000)
-  let assert Ok("message 2") = process.receive(message_subject, 1000)
-  let assert Ok("message 3") = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 1">>) = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 2">>) = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 3">>) = process.receive(message_subject, 1000)
   // Verify that multiple ack happened
   let assert Ok("acked 1-3") = process.receive(ack_subject, 1000)
-  let assert Ok("message 4") = process.receive(message_subject, 1000)
-  let assert Ok("message 5") = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 4">>) = process.receive(message_subject, 1000)
+  let assert Ok(<<"message 5">>) = process.receive(message_subject, 1000)
 }
 
 pub fn test_unacked_then_acked() {
@@ -231,7 +232,7 @@ pub fn test_unacked_then_acked() {
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
-      payload: "msg1",
+      payload: <<"msg1">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -239,7 +240,7 @@ pub fn test_unacked_then_acked() {
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
-      payload: "msg2",
+      payload: <<"msg2">>,
       options: [],
     )
   let assert Ok(Nil) =
@@ -247,7 +248,7 @@ pub fn test_unacked_then_acked() {
       channel: ch,
       exchange: "",
       routing_key: "test_unacked_then_acked_queue",
-      payload: "msg3",
+      payload: <<"msg3">>,
       options: [],
     )
 
@@ -271,9 +272,9 @@ pub fn test_unacked_then_acked() {
     )
 
   // Receive all messages without acking
-  let assert Ok("msg1") = process.receive(received, 1000)
-  let assert Ok("msg2") = process.receive(received, 1000)
-  let assert Ok("msg3") = process.receive(received, 1000)
+  let assert Ok(<<"msg1">>) = process.receive(received, 1000)
+  let assert Ok(<<"msg2">>) = process.receive(received, 1000)
+  let assert Ok(<<"msg3">>) = process.receive(received, 1000)
 
   // Unsubscribe to release unacked messages back to queue
   let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
@@ -296,9 +297,9 @@ pub fn test_unacked_then_acked() {
     )
 
   // Messages should be redelivered and then acknowledged
-  let assert Ok("msg1") = process.receive(received2, 1000)
-  let assert Ok("msg2") = process.receive(received2, 1000)
-  let assert Ok("msg3") = process.receive(received2, 1000)
+  let assert Ok(<<"msg1">>) = process.receive(received2, 1000)
+  let assert Ok(<<"msg2">>) = process.receive(received2, 1000)
+  let assert Ok(<<"msg3">>) = process.receive(received2, 1000)
 }
 
 pub fn test_redelivery_flag() {
@@ -316,7 +317,7 @@ pub fn test_redelivery_flag() {
       channel: ch,
       exchange: "",
       routing_key: "test_redelivery_flag_queue",
-      payload: "test redelivery",
+      payload: <<"test redelivery">>,
       options: [],
     )
 
@@ -342,7 +343,7 @@ pub fn test_redelivery_flag() {
     )
 
   // Receive the message and check it's not marked as redelivered
-  let assert Ok("test redelivery") = process.receive(received, 1000)
+  let assert Ok(<<"test redelivery">>) = process.receive(received, 1000)
   let assert Ok(False) = process.receive(redelivery_flag, 1000)
 
   // Cancel consumer - message should be requeued
@@ -369,7 +370,7 @@ pub fn test_redelivery_flag() {
     )
 
   // Receive the redelivered message and verify redelivered flag is True
-  let assert Ok("test redelivery") = process.receive(redelivered, 1000)
+  let assert Ok(<<"test redelivery">>) = process.receive(redelivered, 1000)
   let assert Ok(True) = process.receive(redelivery_flag2, 1000)
 }
 
@@ -388,7 +389,7 @@ pub fn nack_with_requeue_test() {
       channel: ch,
       exchange: "",
       routing_key: "test_nack_requeue_queue",
-      payload: "nack me",
+      payload: <<"nack me">>,
       options: [],
     )
 
@@ -415,7 +416,7 @@ pub fn nack_with_requeue_test() {
     )
 
   // Receive the message and verify it was nacked
-  let assert Ok("nack me") = process.receive(received, 1000)
+  let assert Ok(<<"nack me">>) = process.receive(received, 1000)
   let assert Ok("nacked") = process.receive(nacked, 1000)
 
   // Unsubscribe first consumer
@@ -439,7 +440,7 @@ pub fn nack_with_requeue_test() {
     )
 
   // Verify message was redelivered
-  let assert Ok(#("nack me", True)) = process.receive(redelivered, 1000)
+  let assert Ok(#(<<"nack me">>, True)) = process.receive(redelivered, 1000)
 }
 
 pub fn nack_single_test() {
@@ -457,7 +458,7 @@ pub fn nack_single_test() {
       channel: ch,
       exchange: "",
       routing_key: "test_nack_single_queue",
-      payload: "nack single",
+      payload: <<"nack single">>,
       options: [],
     )
 
@@ -480,7 +481,7 @@ pub fn nack_single_test() {
       options: [carotte.AutoAck(False)],
     )
 
-  let assert Ok("nack single") = process.receive(received, 1000)
+  let assert Ok(<<"nack single">>) = process.receive(received, 1000)
 
   // Unsubscribe and verify message was requeued
   let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
@@ -500,7 +501,7 @@ pub fn nack_single_test() {
       options: [carotte.AutoAck(False)],
     )
 
-  let assert Ok("nack single") = process.receive(redelivered, 1000)
+  let assert Ok(<<"nack single">>) = process.receive(redelivered, 1000)
 }
 
 pub fn nack_without_requeue_test() {
@@ -518,7 +519,7 @@ pub fn nack_without_requeue_test() {
       channel: ch,
       exchange: "",
       routing_key: "test_nack_no_requeue_queue",
-      payload: "discard me",
+      payload: <<"discard me">>,
       options: [],
     )
 
@@ -541,7 +542,7 @@ pub fn nack_without_requeue_test() {
       options: [carotte.AutoAck(False)],
     )
 
-  let assert Ok("discard me") = process.receive(received, 1000)
+  let assert Ok(<<"discard me">>) = process.receive(received, 1000)
 
   // Wait a bit and verify queue is empty (message was discarded)
   process.sleep(100)
@@ -564,7 +565,7 @@ pub fn reject_with_requeue_test() {
       channel: ch,
       exchange: "",
       routing_key: "test_reject_requeue_queue",
-      payload: "reject me",
+      payload: <<"reject me">>,
       options: [],
     )
 
@@ -587,7 +588,7 @@ pub fn reject_with_requeue_test() {
       options: [carotte.AutoAck(False)],
     )
 
-  let assert Ok("reject me") = process.receive(received, 1000)
+  let assert Ok(<<"reject me">>) = process.receive(received, 1000)
 
   // Unsubscribe and verify message was requeued
   let assert Ok(Nil) = carotte.unsubscribe(channel: ch, consumer_tag:)
@@ -608,7 +609,7 @@ pub fn reject_with_requeue_test() {
     )
 
   // Verify message was redelivered
-  let assert Ok(#("reject me", True)) = process.receive(redelivered, 1000)
+  let assert Ok(#(<<"reject me">>, True)) = process.receive(redelivered, 1000)
 }
 
 pub fn reject_without_requeue_test() {
@@ -626,7 +627,7 @@ pub fn reject_without_requeue_test() {
       channel: ch,
       exchange: "",
       routing_key: "test_reject_no_requeue_queue",
-      payload: "reject and discard",
+      payload: <<"reject and discard">>,
       options: [],
     )
 
@@ -649,7 +650,7 @@ pub fn reject_without_requeue_test() {
       options: [carotte.AutoAck(False)],
     )
 
-  let assert Ok("reject and discard") = process.receive(received, 1000)
+  let assert Ok(<<"reject and discard">>) = process.receive(received, 1000)
 
   // Wait a bit and verify queue is empty (message was discarded)
   process.sleep(100)

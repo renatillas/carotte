@@ -63,13 +63,13 @@ pub fn main() {
       routing_key: "my_routing_key",
     )
 
-  // Publish a message
+  // Publish a message (payload is BitArray)
   let assert Ok(_) =
     carotte.publish(
       channel: ch,
       exchange: "my_exchange",
       routing_key: "my_routing_key",
-      payload: "Hello, RabbitMQ!",
+      payload: <<"Hello, RabbitMQ!">>,
       options: [],
     )
 
@@ -84,7 +84,9 @@ pub fn main() {
       channel: ch,
       queue: "my_queue",
       callback: fn(msg, _deliver) {
-        io.println("Received: " <> msg.payload)
+        // msg.payload is BitArray - convert to string if needed
+        let assert Ok(text) = bit_array.to_string(msg.payload)
+        io.println("Received: " <> text)
         // Messages are auto-acknowledged by default
       },
     )
@@ -165,16 +167,20 @@ carotte.QueueConfig(
 
 ### Publishing Messages
 
-Publish messages with various options:
+Publish messages with various options. The payload is a `BitArray`, which allows sending any binary data:
 
 ```gleam
+import gleam/bit_array
 import gleam/time/duration
+
+// For text/JSON, convert string to BitArray
+let json_payload = bit_array.from_string(json.to_string(user_data))
 
 carotte.publish(
   channel: ch,
   exchange: "notifications",
   routing_key: "user.signup",
-  payload: json.to_string(user_data),
+  payload: json_payload,
   options: [
     carotte.Persistent(True),
     carotte.ContentType("application/json"),
@@ -220,7 +226,9 @@ pub fn start_app() {
       channel: ch,
       queue: "work_queue",
       callback: fn(payload, deliver) {
-        io.println("Processing: " <> payload.payload)
+        // payload.payload is BitArray - convert to string for text messages
+        let assert Ok(text) = bit_array.to_string(payload.payload)
+        io.println("Processing: " <> text)
         io.println("Exchange: " <> deliver.exchange)
         io.println("Routing key: " <> deliver.routing_key)
         // If callback crashes, consumer will be restarted by supervisor
@@ -289,7 +297,7 @@ carotte.publish(
   channel: ch,
   exchange: "my_exchange",
   routing_key: "my_key",
-  payload: "Hello!",
+  payload: <<"Hello!">>,
   options: [
     carotte.MessageHeaders(
       carotte.headers_from_list([
@@ -457,126 +465,6 @@ carotte.unbind_exchange(
   source: "raw_logs",
   destination: "processed_logs",
   routing_key: "*.error"
-)
-```
-
-## Examples
-
-### Work Queue Pattern
-
-Distribute time-consuming tasks among multiple workers:
-
-```gleam
-// Producer
-pub fn send_task(channel, task_data) {
-  carotte.publish(
-    channel:,
-    exchange: "",
-    routing_key: "task_queue",
-    payload: task_data,
-    options: [carotte.Persistent(True)]
-  )
-}
-
-// Worker
-pub fn start_worker(channel, consumer) {
-  let assert Ok(_) =
-    carotte.QueueConfig(..carotte.queue("task_queue"), durable: True)
-    |> carotte.declare_queue(channel)
-
-  carotte.subscribe(
-    consumer,
-    channel:,
-    queue: "task_queue",
-    callback: fn(payload, _meta) {
-      // Simulate work
-      process.sleep(1000)
-      io.println("Task completed: " <> payload.payload)
-    }
-  )
-}
-```
-
-### Publish/Subscribe Pattern
-
-Send messages to multiple consumers:
-
-```gleam
-// Publisher
-pub fn broadcast_event(channel, event) {
-  carotte.publish(
-    channel:,
-    exchange: "events",
-    routing_key: "",  // Fanout ignores routing key
-    payload: event,
-    options: []
-  )
-}
-
-// Subscriber
-pub fn subscribe_to_events(channel, consumer, handler) {
-  // Create fanout exchange
-  let assert Ok(_) =
-    carotte.Exchange(..carotte.exchange("events"), exchange_type: carotte.Fanout)
-    |> carotte.declare_exchange(channel)
-
-  // Create exclusive queue for this subscriber
-  let assert Ok(q) =
-    carotte.QueueConfig(..carotte.queue(""), exclusive: True)
-    |> carotte.declare_queue(channel)
-
-  // Bind to exchange
-  let assert Ok(_) =
-    carotte.bind_queue(
-      channel:,
-      queue: q.name,
-      exchange: "events",
-      routing_key: ""
-    )
-
-  // Subscribe - returns consumer_tag
-  carotte.subscribe(
-    consumer,
-    channel:,
-    queue: q.name,
-    callback: handler
-  )
-}
-```
-
-### Topic-Based Routing
-
-Route messages based on patterns:
-
-```gleam
-// Setup topic exchange
-let assert Ok(_) =
-  carotte.Exchange(..carotte.exchange("logs"), exchange_type: carotte.Topic)
-  |> carotte.declare_exchange(channel)
-
-// Subscribe to error logs from any service
-carotte.bind_queue(
-  channel:,
-  queue: "error_logs",
-  exchange: "logs",
-  routing_key: "*.error"
-)
-
-// Subscribe to all logs from auth service
-carotte.bind_queue(
-  channel:,
-  queue: "auth_logs",
-  exchange: "logs",
-  routing_key: "auth.*"
-)
-
-// Publish logs
-carotte.publish(
-  channel:,
-  exchange: "logs",
-  routing_key: "auth.error",  // Will go to both queues
-  payload: "Authentication failed",
-  options: []
 )
 ```
 
