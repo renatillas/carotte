@@ -3,6 +3,8 @@ import gleam/erlang/process
 import gleam/list
 import gleam/otp/static_supervisor
 import gleam/string
+import gleam/time/duration
+import gleam/time/timestamp
 import gleeunit
 
 pub fn main() {
@@ -253,9 +255,9 @@ pub fn publish_with_options_test() {
         carotte.Persistent(True),
         carotte.CorrelationId("123"),
         carotte.Priority(9),
-        carotte.Expiration("1000"),
+        carotte.Expiration(duration.seconds(1)),
         carotte.MessageId("123"),
-        carotte.Timestamp(123),
+        carotte.Timestamp(timestamp.from_unix_seconds(123)),
         carotte.Type("test"),
       ],
     )
@@ -351,9 +353,9 @@ pub fn unsubscribe_test() {
         carotte.Persistent(True),
         carotte.CorrelationId("123"),
         carotte.Priority(9),
-        carotte.Expiration("1000"),
+        carotte.Expiration(duration.seconds(1)),
         carotte.MessageId("123"),
-        carotte.Timestamp(123),
+        carotte.Timestamp(timestamp.from_unix_seconds(123)),
         carotte.Type("test"),
       ],
     )

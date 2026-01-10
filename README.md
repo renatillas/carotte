@@ -102,6 +102,8 @@ pub fn main() {
 Create and configure a RabbitMQ connection:
 
 ```gleam
+import gleam/time/duration
+
 let assert Ok(client) =
   carotte.ClientConfig(
     ..carotte.default_client(),
@@ -109,7 +111,8 @@ let assert Ok(client) =
     password: "secret",
     host: "rabbitmq.example.com",
     virtual_host: "/production",
-    heartbeat: 30,
+    heartbeat: duration.seconds(30),
+    connection_timeout: duration.seconds(60),
   )
   |> carotte.start()
 
@@ -165,6 +168,8 @@ carotte.QueueConfig(
 Publish messages with various options:
 
 ```gleam
+import gleam/time/duration
+
 carotte.publish(
   channel: ch,
   exchange: "notifications",
@@ -179,7 +184,7 @@ carotte.publish(
         #("retry_count", carotte.IntHeader(0)),
       ])
     ),
-    carotte.Expiration("60000"), // Message expires in 60 seconds
+    carotte.Expiration(duration.seconds(60)), // Message expires in 60 seconds
   ]
 )
 ```

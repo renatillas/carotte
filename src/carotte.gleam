@@ -197,12 +197,15 @@ import gleam/dynamic
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
 import gleam/result
+import gleam/time/duration.{type Duration}
+import gleam/time/timestamp.{type Timestamp}
 
 // =============================================================================
 // ERROR TYPES
@@ -325,32 +328,35 @@ pub type ClientConfig {
     port: Int,
     channel_max: Int,
     frame_max: Int,
-    heartbeat: Int,
-    connection_timeout: Int,
+    /// Heartbeat interval for the connection.
+    /// The minimum duration is one second.
+    heartbeat: Duration,
+    /// Timeout for establishing a connection.
+    connection_timeout: Duration,
   )
 }
 
-/// Connection state
+/// Connection state.
 pub type ConnectionState {
   Connected
   Disconnected(reason: DisconnectReason)
 }
 
-/// Reason for disconnection
+/// Reason for disconnection.
 pub type DisconnectReason {
-  /// Server closed the connection
+  /// Server closed the connection.
   ServerClosed
-  /// Network error
+  /// Network error.
   NetworkError
-  /// Explicitly closed by user
+  /// Explicitly closed by user.
   UserClosed
-  /// Unknown reason
+  /// Unknown reason.
   Unknown(String)
-  /// The connection process is no longer running
+  /// The connection process is no longer running.
   ConnectionProcessNotAlive
 }
 
-/// Connection event for callbacks
+/// Connection event for callbacks.
 pub type ConnectionEvent {
   ConnectionDisconnected(DisconnectReason)
   ConnectionReconnected
@@ -375,8 +381,8 @@ pub type Channel {
 /// Exchanges receive messages from producers and route them to queues
 /// based on routing rules defined by the exchange type.
 ///
-/// Use `new_exchange()` to create an exchange with defaults, then customize
-/// using the builder functions like `exchange_type()`, `durable()`, etc.
+/// Use `exchange()` to create an exchange with defaults, then customize
+/// using record update syntax.
 pub type Exchange {
   Exchange(
     name: String,
@@ -390,14 +396,14 @@ pub type Exchange {
 
 /// The type of routing logic an exchange uses to deliver messages to queues.
 pub type ExchangeType {
-  /// Messages are delivered to all bound queues regardless of routing key
+  /// Messages are delivered to all bound queues regardless of routing key.
   Fanout
-  /// Messages are delivered to queues with an exact routing key match
+  /// Messages are delivered to queues with an exact routing key match.
   Direct
   /// Messages are delivered to queues with pattern-matching on routing key.
   /// Supports wildcards: `*` matches one word, `#` matches zero or more words.
   Topic
-  /// Messages are routed based on header attributes rather than routing key
+  /// Messages are routed based on header attributes rather than routing key.
   Headers
 }
 
@@ -406,8 +412,8 @@ pub type ExchangeType {
 // =============================================================================
 
 /// Configuration for declaring a queue.
-/// Use `default_queue()` to create a queue with sensible defaults,
-/// then customize using builder functions like `durable_queue()`, `exclusive()`, etc.
+/// Use `queue()` to create a queue with sensible defaults,
+/// then customize using record update syntax.
 pub type QueueConfig {
   QueueConfig(
     name: String,
@@ -422,7 +428,7 @@ pub type QueueConfig {
 /// Represents a declared queue on the broker.
 /// Returned by `declare_queue()` and `queue_status()` with current statistics.
 pub type Queue {
-  /// The declared queue with its name, current message count, and consumer count
+  /// The declared queue with its name, current message count, and consumer count.
   Queue(name: String, message_count: Int, consumer_count: Int)
 }
 
@@ -430,15 +436,15 @@ pub type Queue {
 /// Contains information about how and from where the message was delivered.
 pub type Deliver {
   Deliver(
-    /// Identifier for the consumer that received this message
+    /// Identifier for the consumer that received this message.
     consumer_tag: String,
-    /// Unique identifier for this delivery, used for acknowledgment
+    /// Unique identifier for this delivery, used for acknowledgment.
     delivery_tag: Int,
-    /// True if this message was previously delivered but not acknowledged
+    /// True if this message was previously delivered but not acknowledged.
     redelivered: Bool,
-    /// The exchange the message was published to
+    /// The exchange the message was published to.
     exchange: String,
-    /// The routing key used when the message was published
+    /// The routing key used when the message was published.
     routing_key: String,
   )
 }
@@ -479,48 +485,51 @@ pub opaque type HeaderList {
 /// Represents a typed header value.
 /// AMQP headers support several primitive types.
 pub type HeaderValue {
-  /// A boolean header value
+  /// A boolean header value.
   BoolHeader(Bool)
-  /// A floating-point header value
+  /// A floating-point header value.
   FloatHeader(Float)
-  /// An integer header value
+  /// An integer header value.
   IntHeader(Int)
-  /// A string header value
+  /// A string header value.
   StringHeader(String)
-  /// A list of header values (nested)
+  /// A list of header values (nested).
   ListHeader(List(HeaderValue))
 }
 
+/// Options for publishing messages.
 pub type PublishOption {
-  /// If set, returns an error if the broker can't route the message to a queue
+  /// If set, returns an error if the broker can't route the message to a queue.
   Mandatory(Bool)
-  /// MIME Content type
+  /// MIME content type.
   ContentType(String)
-  /// MIME Content encoding
+  /// MIME content encoding.
   ContentEncoding(String)
   /// Headers to attach to the message. Use `headers_from_list` to create headers
   /// for sending, and `headers_to_list` to read headers from received messages.
   MessageHeaders(HeaderList)
   /// If set, uses persistent delivery mode.
-  /// Messages marked as persistent that are delivered to durable queues will be logged to disk
+  /// Messages marked as persistent that are delivered to durable queues will be logged to disk.
   Persistent(Bool)
-  /// Arbitrary application-specific message identifier
+  /// Arbitrary application-specific message identifier.
   CorrelationId(String)
-  /// Message priority, ranging from 0 to 9
+  /// Message priority, ranging from 0 to 9.
   Priority(Int)
-  /// Name of the reply queue
+  /// Name of the reply queue.
   ReplyTo(String)
-  /// How long the message is valid (in milliseconds)
-  Expiration(String)
-  /// Message identifier
+  /// How long the message is valid before it expires.
+  Expiration(Duration)
+  /// Message identifier.
   MessageId(String)
-  /// timestamp associated with this message (epoch time)
-  Timestamp(Int)
-  /// Message type
+  /// Timestamp associated with this message.
+  /// Note: AMQP only supports second-level precision, so any nanoseconds
+  /// in the timestamp will be truncated when sending.
+  Timestamp(Timestamp)
+  /// Message type.
   Type(String)
-  /// Creating user ID. RabbitMQ will validate this against the active connection user
+  /// Creating user ID. RabbitMQ will validate this against the active connection user.
   UserId(String)
-  /// Application ID
+  /// Application ID.
   AppId(String)
 }
 
@@ -528,7 +537,7 @@ pub type PublishOption {
 // SUPERVISOR TYPES
 // =============================================================================
 
-/// Configuration for a consumer
+/// Configuration for a consumer.
 pub opaque type ConsumerConfig {
   ConsumerConfig(
     channel: Channel,
@@ -571,8 +580,8 @@ pub fn default_client() -> ClientConfig {
     port: 5672,
     channel_max: 2074,
     frame_max: 0,
-    heartbeat: 10,
-    connection_timeout: 60_000,
+    heartbeat: duration.seconds(10),
+    connection_timeout: duration.seconds(60),
   )
 }
 
@@ -587,6 +596,18 @@ pub fn default_client() -> ClientConfig {
 /// }
 /// ```
 pub fn start(builder: ClientConfig) -> Result(Client, ConnectionError) {
+  // Convert Duration to seconds for heartbeat
+  let #(heartbeat_secs, heartbeat_nanoseconds) =
+    duration.to_seconds_and_nanoseconds(builder.heartbeat)
+  let heartbeat_secs = case heartbeat_nanoseconds > 0 {
+    True -> heartbeat_secs + 1
+    False -> heartbeat_secs
+  }
+  // Convert Duration to milliseconds for connection_timeout
+  let #(timeout_secs, timeout_nanos) =
+    duration.to_seconds_and_nanoseconds(builder.connection_timeout)
+  let timeout_ms = timeout_secs * 1000 + timeout_nanos / 1_000_000
+
   use pid <- result.map(do_start(
     builder.username,
     builder.password,
@@ -595,8 +616,8 @@ pub fn start(builder: ClientConfig) -> Result(Client, ConnectionError) {
     builder.port,
     builder.channel_max,
     builder.frame_max,
-    builder.heartbeat,
-    builder.connection_timeout,
+    heartbeat_secs,
+    timeout_ms,
   ))
   Client(pid:, config: builder)
 }
@@ -623,7 +644,7 @@ pub fn close(client: Client) -> Result(Nil, ConnectionError) {
 @external(erlang, "carotte_ffi", "close")
 fn do_close(client: Client) -> Result(Nil, ConnectionError)
 
-/// Check if the client connection is currently active
+/// Check if the client connection is currently active.
 pub fn is_connected(client: Client) -> Bool {
   do_is_process_alive(client)
 }
@@ -631,7 +652,7 @@ pub fn is_connected(client: Client) -> Bool {
 @external(erlang, "carotte_ffi", "is_process_alive")
 fn do_is_process_alive(client: Client) -> Bool
 
-/// Get the current connection state
+/// Get the current connection state.
 pub fn connection_state(client: Client) -> ConnectionState {
   case is_connected(client) {
     True -> Connected
@@ -647,6 +668,18 @@ pub fn reconnect(client: Client) -> Result(Client, ConnectionError) {
     True -> Error(AlreadyConnected)
     False -> {
       let builder = client.config
+      // Convert Duration to seconds for heartbeat
+      let #(heartbeat_secs, heartbeat_nanoseconds) =
+        duration.to_seconds_and_nanoseconds(builder.heartbeat)
+      let heartbeat_secs = case heartbeat_nanoseconds > 0 {
+        True -> heartbeat_secs + 1
+        False -> heartbeat_secs
+      }
+      // Convert Duration to milliseconds for connection_timeout
+      let #(timeout_secs, timeout_nanos) =
+        duration.to_seconds_and_nanoseconds(builder.connection_timeout)
+      let timeout_ms = timeout_secs * 1000 + timeout_nanos / 1_000_000
+
       case
         do_start(
           builder.username,
@@ -656,8 +689,8 @@ pub fn reconnect(client: Client) -> Result(Client, ConnectionError) {
           builder.port,
           builder.channel_max,
           builder.frame_max,
-          builder.heartbeat,
-          builder.connection_timeout,
+          heartbeat_secs,
+          timeout_ms,
         )
       {
         Ok(pid) -> Ok(Client(pid:, config: builder))
@@ -741,7 +774,7 @@ pub fn describe_consume_error(err: ConsumeError) -> String {
 // CHANNEL FUNCTIONS
 // =============================================================================
 
-/// Open a channel to a RabbitMQ server
+/// Open a channel to a RabbitMQ server.
 pub fn open_channel(client: Client) -> Result(Channel, ChannelError) {
   do_open_channel(client)
 }
@@ -771,7 +804,7 @@ pub fn exchange(name: String) -> Exchange {
   )
 }
 
-/// Declare an exchange on the broker
+/// Declare an exchange on the broker.
 pub fn declare_exchange(
   exchange: Exchange,
   channel: Channel,
@@ -779,7 +812,7 @@ pub fn declare_exchange(
   do_declare_exchange(channel, exchange)
 }
 
-/// Declare an exchange on the broker without waiting for a response
+/// Declare an exchange on the broker without waiting for a response.
 pub fn declare_exchange_async(
   exchange: Exchange,
   channel: Channel,
@@ -793,8 +826,8 @@ fn do_declare_exchange(
   exchange: Exchange,
 ) -> Result(Nil, ExchangeError)
 
-/// Delete an exchange from the broker
-/// If `unused` is set to true, the exchange will only be deleted if it has no queues bound to it
+/// Delete an exchange from the broker.
+/// If `unused` is set to true, the exchange will only be deleted if it has no queues bound to it.
 pub fn delete_exchange(
   channel channel: Channel,
   exchange exchange: String,
@@ -803,7 +836,7 @@ pub fn delete_exchange(
   do_delete_exchange(channel, exchange, unused, False)
 }
 
-/// Delete an exchange from the broker without waiting for a response
+/// Delete an exchange from the broker without waiting for a response.
 pub fn delete_exchange_async(
   channel channel: Channel,
   exchange exchange: String,
@@ -820,8 +853,8 @@ fn do_delete_exchange(
   nowait: Bool,
 ) -> Result(Nil, ExchangeError)
 
-/// Bind an exchange to another exchange
-/// Routing keys are used to filter messages from the source exchange
+/// Bind an exchange to another exchange.
+/// Routing keys are used to filter messages from the source exchange.
 pub fn bind_exchange(
   channel channel: Channel,
   source source: String,
@@ -851,7 +884,7 @@ fn do_bind_exchange(
   nowait: Bool,
 ) -> Result(Nil, ExchangeError)
 
-/// Unbind an exchange from another exchange
+/// Unbind an exchange from another exchange.
 pub fn unbind_exchange(
   channel channel: Channel,
   source source: String,
@@ -861,7 +894,8 @@ pub fn unbind_exchange(
   do_unbind_exchange(channel, source, destination, routing_key, False)
 }
 
-/// Unbind an exchange from another exchange asynchronously. Same semantics as `unbind`
+/// Unbind an exchange from another exchange asynchronously.
+/// Same semantics as `unbind_exchange`.
 pub fn unbind_exchange_async(
   channel channel: Channel,
   source source: String,
@@ -909,7 +943,7 @@ pub fn queue(name: String) -> QueueConfig {
   )
 }
 
-/// Declare a queue on the broker
+/// Declare a queue on the broker.
 pub fn declare_queue(
   queue: QueueConfig,
   channel: Channel,
@@ -936,7 +970,7 @@ fn do_declare_queue(
   nowait: Bool,
 ) -> Result(Queue, QueueError)
 
-/// Declare a queue on the broker asynchronously
+/// Declare a queue on the broker asynchronously.
 pub fn declare_queue_async(
   queue: QueueConfig,
   channel: Channel,
@@ -963,10 +997,10 @@ fn do_declare_queue_async(
   nowait: Bool,
 ) -> Result(Nil, QueueError)
 
-/// Delete a queue from the broker
-/// If `if_unused` is set, the queue will only be deleted if it has no subscribers
-/// If `if_empty` is set, the queue will only be deleted if it has no messages
-/// TODO: What does it return?
+/// Delete a queue from the broker.
+/// If `if_unused` is set, the queue will only be deleted if it has no subscribers.
+/// If `if_empty` is set, the queue will only be deleted if it has no messages.
+/// Returns the number of messages that were in the queue when it was deleted.
 pub fn delete_queue(
   channel channel: Channel,
   queue queue: String,
@@ -976,7 +1010,8 @@ pub fn delete_queue(
   do_delete_queue(channel, queue, if_unused, if_empty, False)
 }
 
-/// Delete a queue from the broker asynchronously. Same semantics as `delete`
+/// Delete a queue from the broker asynchronously.
+/// Same semantics as `delete_queue`.
 pub fn delete_queue_async(
   channel channel: Channel,
   queue queue: String,
@@ -996,8 +1031,8 @@ fn do_delete_queue(
   nowait: Bool,
 ) -> Result(Int, QueueError)
 
-/// Bind a queue to an exchange
-/// The `routing_key` is used to filter messages from the exchange
+/// Bind a queue to an exchange.
+/// The `routing_key` is used to filter messages from the exchange.
 pub fn bind_queue(
   channel channel: Channel,
   queue queue: String,
@@ -1007,7 +1042,8 @@ pub fn bind_queue(
   do_bind_queue(channel, queue, exchange, routing_key, False)
 }
 
-/// Bind a queue to an exchange asynchronously. Same semantics as `bind`
+/// Bind a queue to an exchange asynchronously.
+/// Same semantics as `bind_queue`.
 pub fn bind_queue_async(
   channel channel: Channel,
   queue queue: String,
@@ -1026,8 +1062,8 @@ fn do_bind_queue(
   nowait: Bool,
 ) -> Result(Nil, QueueError)
 
-/// Unbind a queue from an exchange
-/// The `routing_key` is used to filter messages from the exchange
+/// Unbind a queue from an exchange.
+/// The `routing_key` is used to filter messages from the exchange.
 pub fn unbind_queue(
   channel channel: Channel,
   queue queue: String,
@@ -1045,7 +1081,7 @@ fn do_unbind_queue(
   routing_key: String,
 ) -> Result(Nil, QueueError)
 
-/// Purge a queue of all messages
+/// Purge a queue of all messages.
 pub fn purge_queue(
   channel channel: Channel,
   queue queue: String,
@@ -1053,7 +1089,7 @@ pub fn purge_queue(
   do_purge_queue(channel, queue, False)
 }
 
-/// Purge a queue of all messages asynchronously
+/// Purge a queue of all messages asynchronously.
 pub fn purge_queue_async(
   channel channel: Channel,
   queue queue: String,
@@ -1069,7 +1105,7 @@ fn do_purge_queue(
   nowait: Bool,
 ) -> Result(Int, QueueError)
 
-/// Get the status of a queue
+/// Get the status of a queue.
 pub fn queue_status(
   channel channel: Channel,
   queue queue: String,
@@ -1231,9 +1267,9 @@ fn parse_header_array(value: dynamic.Dynamic) -> Result(List(HeaderValue), Nil) 
   })
 }
 
-/// Publish a message 'payload' to an exchange
-/// The `routing_key` is used to filter messages from the exchange
-/// The `options` are used to set message properties
+/// Publish a message to an exchange.
+/// The `routing_key` is used to route messages to queues.
+/// The `options` are used to set message properties.
 pub fn publish(
   channel channel: Channel,
   exchange exchange: String,
@@ -1241,7 +1277,52 @@ pub fn publish(
   payload payload: String,
   options options: List(PublishOption),
 ) -> Result(Nil, PublishError) {
-  do_publish(channel, exchange, routing_key, payload, options)
+  let ffi_options = list.map(options, convert_publish_option_for_ffi)
+  do_publish(channel, exchange, routing_key, payload, ffi_options)
+}
+
+/// Internal type for FFI - expiration is a string (AMQP protocol requirement).
+type PublishOptionFfi {
+  MandatoryFfi(Bool)
+  ContentTypeFfi(String)
+  ContentEncodingFfi(String)
+  MessageHeadersFfi(HeaderList)
+  PersistentFfi(Bool)
+  CorrelationIdFfi(String)
+  PriorityFfi(Int)
+  ReplyToFfi(String)
+  ExpirationFfi(String)
+  MessageIdFfi(String)
+  TimestampFfi(Int)
+  TypeFfi(String)
+  UserIdFfi(String)
+  AppIdFfi(String)
+}
+
+fn convert_publish_option_for_ffi(option: PublishOption) -> PublishOptionFfi {
+  case option {
+    Mandatory(v) -> MandatoryFfi(v)
+    ContentType(v) -> ContentTypeFfi(v)
+    ContentEncoding(v) -> ContentEncodingFfi(v)
+    MessageHeaders(v) -> MessageHeadersFfi(v)
+    Persistent(v) -> PersistentFfi(v)
+    CorrelationId(v) -> CorrelationIdFfi(v)
+    Priority(v) -> PriorityFfi(v)
+    ReplyTo(v) -> ReplyToFfi(v)
+    Expiration(dur) -> {
+      let #(seconds, nanos) = duration.to_seconds_and_nanoseconds(dur)
+      let millis = seconds * 1000 + nanos / 1_000_000
+      ExpirationFfi(int.to_string(millis))
+    }
+    MessageId(v) -> MessageIdFfi(v)
+    Timestamp(ts) -> {
+      let #(epoch_secs, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+      TimestampFfi(epoch_secs)
+    }
+    Type(v) -> TypeFfi(v)
+    UserId(v) -> UserIdFfi(v)
+    AppId(v) -> AppIdFfi(v)
+  }
 }
 
 @external(erlang, "carotte_ffi", "publish")
@@ -1250,7 +1331,7 @@ fn do_publish(
   exchange: String,
   routing_key: String,
   payload: String,
-  publish_options: List(PublishOption),
+  publish_options: List(PublishOptionFfi),
 ) -> Result(Nil, PublishError)
 
 // =============================================================================
@@ -1579,14 +1660,26 @@ fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
       use reply_to <- decode.subfield([7], decode.optional(decode.string))
       let properties = add_if_some(properties, ReplyTo, reply_to)
 
-      use expiration <- decode.subfield([8], decode.optional(decode.string))
-      let properties = add_if_some(properties, Expiration, expiration)
+      use expiration_str <- decode.subfield([8], decode.optional(decode.string))
+      let expiration_duration = case expiration_str {
+        Some(s) ->
+          case int.parse(s) {
+            Ok(ms) -> Some(duration.milliseconds(ms))
+            Error(_) -> None
+          }
+        None -> None
+      }
+      let properties = add_if_some(properties, Expiration, expiration_duration)
 
       use message_id <- decode.subfield([9], decode.optional(decode.string))
       let properties = add_if_some(properties, MessageId, message_id)
 
-      use timestamp <- decode.subfield([10], decode.optional(decode.int))
-      let properties = add_if_some(properties, Timestamp, timestamp)
+      use timestamp_secs <- decode.subfield([10], decode.optional(decode.int))
+      let timestamp_value = case timestamp_secs {
+        Some(secs) -> Some(timestamp.from_unix_seconds(secs))
+        None -> None
+      }
+      let properties = add_if_some(properties, Timestamp, timestamp_value)
 
       use message_type <- decode.subfield([11], decode.optional(decode.string))
       let properties = add_if_some(properties, Type, message_type)

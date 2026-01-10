@@ -578,40 +578,40 @@ queue_purge({channel, ChannelPid}, Queue, Nowait) ->
 publish({channel, ChannelPid}, Exchange, RoutingKey, Payload, Proplist) ->
   try
     Headers =
-      case proplists:get_value(message_headers, Proplist, undefined) of
+      case proplists:get_value(message_headers_ffi, Proplist, undefined) of
         {header_list, HeaderList} ->
           HeaderList;
         _ ->
           undefined
       end,
     Props =
-      #'P_basic'{content_type = proplists:get_value(content_type, Proplist, undefined),
-                 content_encoding = proplists:get_value(content_encoding, Proplist, undefined),
+      #'P_basic'{content_type = proplists:get_value(content_type_ffi, Proplist, undefined),
+                 content_encoding = proplists:get_value(content_encoding_ffi, Proplist, undefined),
                  headers = Headers,
                  delivery_mode =
-                   case proplists:get_value(persistent, Proplist, false) of
+                   case proplists:get_value(persistent_ffi, Proplist, false) of
                      true ->
                        2;
                      false ->
                        1
                    end,
-                 priority = proplists:get_value(priority, Proplist, undefined),
-                 correlation_id = proplists:get_value(correlation_id, Proplist, undefined),
-                 reply_to = proplists:get_value(reply_to, Proplist, undefined),
-                 expiration = proplists:get_value(expiration, Proplist, undefined),
-                 message_id = proplists:get_value(message_id, Proplist, undefined),
-                 timestamp = proplists:get_value(timestamp, Proplist, undefined),
-                 type = proplists:get_value(type, Proplist, undefined),
-                 user_id = proplists:get_value(user_id, Proplist, undefined),
-                 app_id = proplists:get_value(app_id, Proplist, undefined),
-                 cluster_id = proplists:get_value(cluster_id, Proplist, undefined)},
+                 priority = proplists:get_value(priority_ffi, Proplist, undefined),
+                 correlation_id = proplists:get_value(correlation_id_ffi, Proplist, undefined),
+                 reply_to = proplists:get_value(reply_to_ffi, Proplist, undefined),
+                 expiration = proplists:get_value(expiration_ffi, Proplist, undefined),
+                 message_id = proplists:get_value(message_id_ffi, Proplist, undefined),
+                 timestamp = proplists:get_value(timestamp_ffi, Proplist, undefined),
+                 type = proplists:get_value(type_ffi, Proplist, undefined),
+                 user_id = proplists:get_value(user_id_ffi, Proplist, undefined),
+                 app_id = proplists:get_value(app_id_ffi, Proplist, undefined),
+                 cluster_id = proplists:get_value(cluster_id_ffi, Proplist, undefined)},
     case amqp_channel:call(ChannelPid,
                            #'basic.publish'{exchange = Exchange,
                                             routing_key = RoutingKey,
                                             mandatory =
-                                              proplists:get_value(mandatory, Proplist, false),
+                                              proplists:get_value(mandatory_ffi, Proplist, false),
                                             immediate =
-                                              proplists:get_value(immediate, Proplist, false)},
+                                              proplists:get_value(immediate_ffi, Proplist, false)},
                            #amqp_msg{props = Props, payload = Payload})
     of
       ok ->
