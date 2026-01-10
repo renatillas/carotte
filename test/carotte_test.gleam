@@ -164,7 +164,7 @@ pub fn declare_queue_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   assert Ok(carotte.Queue("declare_queue", 0, 0))
-    == carotte.declare_queue(carotte.queue("declare_queue"), channel)
+    == carotte.declare_queue(carotte.default_queue("declare_queue"), channel)
 }
 
 pub fn declare_queue_async_test() {
@@ -173,7 +173,7 @@ pub fn declare_queue_async_test() {
 
   assert Ok(Nil)
     == carotte.declare_queue_async(
-      carotte.queue("declare_queue_async"),
+      carotte.default_queue("declare_queue_async"),
       channel,
     )
 }
@@ -183,7 +183,7 @@ pub fn delete_queue_async_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("delete_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("delete_queue"), channel)
 
   assert Ok(0)
     == carotte.delete_queue(
@@ -198,7 +198,8 @@ pub fn bind_queue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
 
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("bind_queue"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue("bind_queue"), channel)
 
   let assert Ok(Nil) =
     carotte.declare_exchange(carotte.exchange("bind_queue_exchange"), channel)
@@ -216,7 +217,7 @@ pub fn unbind_queue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("unbind_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("unbind_queue"), channel)
   let assert Ok(Nil) =
     carotte.declare_exchange(carotte.exchange("unbind_queue_exchange"), channel)
   let assert Ok(Nil) =
@@ -240,7 +241,7 @@ pub fn purge_queue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("purge_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("purge_queue"), channel)
 
   assert Ok(0) == carotte.purge_queue(channel:, queue: "purge_queue")
 }
@@ -249,7 +250,7 @@ pub fn purge_queue_async_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("purge_queue_async"), channel)
+    carotte.declare_queue(carotte.default_queue("purge_queue_async"), channel)
 
   assert Ok(Nil)
     == carotte.purge_queue_async(channel:, queue: "purge_queue_async")
@@ -259,7 +260,7 @@ pub fn queue_status_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("queue_status"), channel)
+    carotte.declare_queue(carotte.default_queue("queue_status"), channel)
 
   assert Ok(carotte.Queue("queue_status", 0, 0))
     == carotte.queue_status(channel:, queue: "queue_status")
@@ -270,7 +271,8 @@ pub fn publish_test() {
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(Nil) =
     carotte.declare_exchange(carotte.exchange("p_exchange"), channel)
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("p_queue"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue("p_queue"), channel)
 
   assert Ok(Nil)
     == carotte.publish(
@@ -287,7 +289,8 @@ pub fn publish_with_options_test() {
   let assert Ok(channel) = carotte.open_channel(client)
   let assert Ok(Nil) =
     carotte.declare_exchange(carotte.exchange("pwo_exchange"), channel)
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("pwo_queue"), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue("pwo_queue"), channel)
   let headers =
     carotte.headers_from_list([
       #("string_key", carotte.StringHeader("value")),
@@ -330,7 +333,7 @@ pub fn subscribe_test() {
       if_empty: False,
     )
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("consume_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("consume_queue"), channel)
   let assert Ok(_) =
     carotte.bind_queue(
       channel: channel,
@@ -385,7 +388,7 @@ pub fn unsubscribe_test() {
   let assert Ok(Nil) =
     carotte.declare_exchange(carotte.exchange("unsubscribe_exchange"), channel)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("unsubscribe_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("unsubscribe_queue"), channel)
   let assert Ok(Nil) =
     carotte.bind_queue(
       channel: channel,
@@ -452,7 +455,7 @@ pub fn receive_headers_test() {
       if_empty: False,
     )
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("headers_test_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("headers_test_queue"), channel)
   let assert Ok(_) =
     carotte.bind_queue(
       channel: channel,
@@ -530,7 +533,10 @@ pub fn receive_float_header_test() {
       if_empty: False,
     )
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("float_headers_test_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("float_headers_test_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.bind_queue(
       channel: channel,
@@ -607,7 +613,10 @@ pub fn receive_list_header_test() {
       if_empty: False,
     )
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("list_headers_test_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("list_headers_test_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.bind_queue(
       channel: channel,
@@ -693,7 +702,11 @@ pub fn declare_queue_with_auto_generated_name_test() {
 
   // Declare a queue with an empty name - RabbitMQ should generate one
   let assert Ok(carotte.Queue(name:, message_count: 0, consumer_count: 0)) =
-    carotte.QueueConfig(..carotte.queue(""), exclusive: True, auto_delete: True)
+    carotte.QueueConfig(
+      ..carotte.default_queue(""),
+      exclusive: True,
+      auto_delete: True,
+    )
     |> carotte.declare_queue(channel)
 
   assert name != ""
@@ -710,7 +723,10 @@ pub fn supervised_consumer_integration_test() {
 
   // 2. Set up queue and exchange
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("supervised_test_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("supervised_test_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.purge_queue(channel:, queue: "supervised_test_queue")
   let assert Ok(_) =
@@ -796,7 +812,8 @@ pub fn factory_supervisor_multiple_consumers_test() {
   let exchange2 = "factory_test_exchange_2"
 
   // Declare and purge queue 1
-  let assert Ok(_) = carotte.declare_queue(carotte.queue(queue1), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue(queue1), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: queue1)
   let assert Ok(_) =
     carotte.declare_exchange(carotte.exchange(exchange1), channel)
@@ -809,7 +826,8 @@ pub fn factory_supervisor_multiple_consumers_test() {
     )
 
   // Declare and purge queue 2
-  let assert Ok(_) = carotte.declare_queue(carotte.queue(queue2), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue(queue2), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: queue2)
   let assert Ok(_) =
     carotte.declare_exchange(carotte.exchange(exchange2), channel)
@@ -936,7 +954,8 @@ pub fn factory_supervisor_manual_ack_test() {
 
   // 2. Set up queue
   let queue = "factory_manual_ack_queue"
-  let assert Ok(_) = carotte.declare_queue(carotte.queue(queue), channel)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue(queue), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue:)
 
   // 3. Start factory supervisor
@@ -1002,9 +1021,9 @@ pub fn fanout_exchange_test() {
 
   // Declare two queues and bind them to the fanout exchange
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("fanout_queue_1"), channel)
+    carotte.declare_queue(carotte.default_queue("fanout_queue_1"), channel)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("fanout_queue_2"), channel)
+    carotte.declare_queue(carotte.default_queue("fanout_queue_2"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "fanout_queue_1")
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "fanout_queue_2")
 
@@ -1078,11 +1097,11 @@ pub fn topic_exchange_test() {
 
   // Declare queues with different topic patterns
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("topic_queue_all"), channel)
+    carotte.declare_queue(carotte.default_queue("topic_queue_all"), channel)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("topic_queue_logs"), channel)
+    carotte.declare_queue(carotte.default_queue("topic_queue_logs"), channel)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("topic_queue_error"), channel)
+    carotte.declare_queue(carotte.default_queue("topic_queue_error"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_all")
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_logs")
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "topic_queue_error")
@@ -1195,7 +1214,10 @@ pub fn headers_exchange_test() {
   // and basic message flow works
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("headers_exchange_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("headers_exchange_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.purge_queue(channel:, queue: "headers_exchange_queue")
 
@@ -1291,7 +1313,10 @@ pub fn delete_exchange_async_test() {
 
   // Verify exchange is gone by trying to bind to it (should fail)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("async_delete_test_queue"), channel2)
+    carotte.declare_queue(
+      carotte.default_queue("async_delete_test_queue"),
+      channel2,
+    )
   let result =
     carotte.bind_queue(
       channel: channel2,
@@ -1331,7 +1356,7 @@ pub fn bind_exchange_async_test() {
 
   // Verify binding works by publishing through the chain
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("async_bind_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("async_bind_queue"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "async_bind_queue")
   let assert Ok(Nil) =
     carotte.bind_queue(
@@ -1412,7 +1437,10 @@ pub fn bind_queue_async_test() {
     carotte.exchange("async_queue_bind_exchange")
     |> carotte.declare_exchange(channel)
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("async_queue_bind_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("async_queue_bind_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.purge_queue(channel:, queue: "async_queue_bind_queue")
 
@@ -1461,7 +1489,10 @@ pub fn unsubscribe_async_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("async_unsubscribe_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("async_unsubscribe_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.purge_queue(channel:, queue: "async_unsubscribe_queue")
 
@@ -1492,7 +1523,10 @@ pub fn delete_queue_async_full_test() {
 
   // Create a queue
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("async_delete_queue_full"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("async_delete_queue_full"),
+      channel,
+    )
 
   // Delete asynchronously
   let assert Ok(Nil) =
@@ -1522,7 +1556,7 @@ pub fn publish_with_reply_to_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("reply_to_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("reply_to_queue"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "reply_to_queue")
 
   let consumers = process.new_name("reply_to_consumers")
@@ -1569,7 +1603,7 @@ pub fn publish_with_user_id_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("user_id_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("user_id_queue"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "user_id_queue")
 
   let consumers = process.new_name("user_id_consumers")
@@ -1615,7 +1649,7 @@ pub fn publish_with_app_id_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("app_id_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("app_id_queue"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "app_id_queue")
 
   let consumers = process.new_name("app_id_consumers")
@@ -1700,7 +1734,10 @@ pub fn nested_list_headers_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("nested_list_headers_queue"), channel)
+    carotte.declare_queue(
+      carotte.default_queue("nested_list_headers_queue"),
+      channel,
+    )
   let assert Ok(_) =
     carotte.purge_queue(channel:, queue: "nested_list_headers_queue")
 
@@ -1766,7 +1803,7 @@ pub fn subscribe_with_empty_options_test() {
   let assert Ok(channel) = carotte.open_channel(client)
 
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("empty_options_queue"), channel)
+    carotte.declare_queue(carotte.default_queue("empty_options_queue"), channel)
   let assert Ok(_) = carotte.purge_queue(channel:, queue: "empty_options_queue")
 
   let consumers = process.new_name("empty_options_consumers")
@@ -1816,7 +1853,10 @@ pub fn durable_queue_test() {
 
   // Declare a durable queue
   let assert Ok(carotte.Queue("durable_test_queue", _, _)) =
-    carotte.QueueConfig(..carotte.queue("durable_test_queue"), durable: True)
+    carotte.QueueConfig(
+      ..carotte.default_queue("durable_test_queue"),
+      durable: True,
+    )
     |> carotte.declare_queue(channel)
 
   // Cleanup
@@ -1838,7 +1878,7 @@ pub fn auto_delete_queue_test() {
   // Declare an auto-delete queue
   let assert Ok(carotte.Queue("auto_delete_test_queue", _, _)) =
     carotte.QueueConfig(
-      ..carotte.queue("auto_delete_test_queue"),
+      ..carotte.default_queue("auto_delete_test_queue"),
       auto_delete: True,
     )
     |> carotte.declare_queue(channel)

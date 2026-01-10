@@ -4,7 +4,7 @@ import gleam/erlang/process
 pub fn manual_ack_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_ack_queue")
+  let test_queue = carotte.default_queue("test_ack_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) = carotte.purge_queue(channel: ch, queue: "test_ack_queue")
@@ -54,7 +54,7 @@ pub fn manual_ack_test() {
 pub fn ack_single_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_ack_single_queue")
+  let test_queue = carotte.default_queue("test_ack_single_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -116,7 +116,7 @@ pub fn ack_single_test() {
 pub fn ack_multiple_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_ack_multiple_queue")
+  let test_queue = carotte.default_queue("test_ack_multiple_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -220,7 +220,7 @@ pub fn ack_multiple_test() {
 pub fn test_unacked_then_acked() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_unacked_then_acked_queue")
+  let test_queue = carotte.default_queue("test_unacked_then_acked_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -305,7 +305,7 @@ pub fn test_unacked_then_acked() {
 pub fn test_redelivery_flag() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_redelivery_flag_queue")
+  let test_queue = carotte.default_queue("test_redelivery_flag_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -377,7 +377,7 @@ pub fn test_redelivery_flag() {
 pub fn nack_with_requeue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_nack_requeue_queue")
+  let test_queue = carotte.default_queue("test_nack_requeue_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -446,7 +446,7 @@ pub fn nack_with_requeue_test() {
 pub fn nack_single_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_nack_single_queue")
+  let test_queue = carotte.default_queue("test_nack_single_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -507,7 +507,7 @@ pub fn nack_single_test() {
 pub fn nack_without_requeue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_nack_no_requeue_queue")
+  let test_queue = carotte.default_queue("test_nack_no_requeue_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -553,7 +553,7 @@ pub fn nack_without_requeue_test() {
 pub fn reject_with_requeue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_reject_requeue_queue")
+  let test_queue = carotte.default_queue("test_reject_requeue_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =
@@ -615,7 +615,7 @@ pub fn reject_with_requeue_test() {
 pub fn reject_without_requeue_test() {
   let assert Ok(client) = carotte.start(carotte.default_client())
   let assert Ok(ch) = carotte.open_channel(client)
-  let test_queue = carotte.queue("test_reject_no_requeue_queue")
+  let test_queue = carotte.default_queue("test_reject_no_requeue_queue")
   let assert Ok(_) = carotte.declare_queue(test_queue, ch)
   // Purge queue to ensure clean state
   let assert Ok(_) =

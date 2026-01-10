@@ -129,7 +129,7 @@ pub fn queue_access_refused_test() {
   // Try to declare a queue with invalid name (starting with amq. is reserved)
   let assert Error(carotte.QueueAccessRefused(
     "ACCESS_REFUSED - queue name 'amq.reserved.name' contains reserved prefix 'amq.*'",
-  )) = carotte.declare_queue(carotte.queue("amq.reserved.name"), ch)
+  )) = carotte.declare_queue(carotte.default_queue("amq.reserved.name"), ch)
 }
 
 // Test binding queue to non-existent exchange - should get QueueNotFound
@@ -138,7 +138,8 @@ pub fn bind_to_nonexistent_exchange_test() {
   let assert Ok(ch) = carotte.open_channel(client)
 
   // Create a queue
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("test_queue_bind"), ch)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue("test_queue_bind"), ch)
 
   // Try to bind to non-existent exchange
   let assert Error(carotte.QueueNotFound(
@@ -162,7 +163,7 @@ pub fn closed_channel_test() {
 
   // Try to use the channel after closing - channel process no longer exists
   let assert Error(carotte.QueueChannelClosed(_)) =
-    carotte.declare_queue(carotte.queue("test_after_close"), ch)
+    carotte.declare_queue(carotte.default_queue("test_after_close"), ch)
 }
 
 // Test deleting a queue that is in use - should get QueuePreconditionFailed
@@ -171,7 +172,8 @@ pub fn delete_queue_in_use_test() {
   let assert Ok(ch) = carotte.open_channel(client)
 
   // Create a queue
-  let assert Ok(_) = carotte.declare_queue(carotte.queue("queue_in_use"), ch)
+  let assert Ok(_) =
+    carotte.declare_queue(carotte.default_queue("queue_in_use"), ch)
 
   // Start the supervisor
   let consumers = process.new_name("delete_queue_test_consumers")
@@ -206,7 +208,7 @@ pub fn exclusive_queue_test() {
   // Create an exclusive queue
   let assert Ok(_) =
     carotte.QueueConfig(
-      ..carotte.queue("exclusive_test_queue"),
+      ..carotte.default_queue("exclusive_test_queue"),
       exclusive: True,
     )
     |> carotte.declare_queue(ch1)
@@ -254,7 +256,7 @@ pub fn consume_channel_closed_test() {
 
   // Create a queue first
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("consume_error_queue"), ch)
+    carotte.declare_queue(carotte.default_queue("consume_error_queue"), ch)
 
   // Close the connection
   let assert Ok(Nil) = carotte.close(client)
@@ -280,7 +282,7 @@ pub fn unsubscribe_channel_closed_test() {
 
   // Create a queue
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("unsubscribe_error_queue"), ch)
+    carotte.declare_queue(carotte.default_queue("unsubscribe_error_queue"), ch)
 
   // Start the supervisor
   let consumers = process.new_name("unsubscribe_error_test_consumers")
@@ -536,7 +538,7 @@ pub fn unbind_queue_idempotent_test() {
 
   // Create a queue
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("unbind_idempotent_queue"), ch)
+    carotte.declare_queue(carotte.default_queue("unbind_idempotent_queue"), ch)
 
   // Unbind from non-existent exchange - should succeed (idempotent)
   let assert Ok(Nil) =
@@ -557,7 +559,7 @@ pub fn delete_nonempty_queue_test() {
 
   // Create a queue
   let assert Ok(_) =
-    carotte.declare_queue(carotte.queue("nonempty_delete_queue"), ch)
+    carotte.declare_queue(carotte.default_queue("nonempty_delete_queue"), ch)
 
   // Publish a message to it
   let assert Ok(_) =
