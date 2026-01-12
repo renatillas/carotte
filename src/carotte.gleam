@@ -18,7 +18,7 @@
 ////
 ////   // Declare exchange and queue
 ////   let assert Ok(_) = carotte.declare_exchange(carotte.exchange("my_exchange"), ch)
-////   let assert Ok(_) = carotte.declare_queue(carotte.queue("my_queue"), ch)
+////   let assert Ok(_) = carotte.declare_queue(carotte.default_queue("my_queue"), ch)
 ////   let assert Ok(_) = carotte.bind_queue(channel: ch, queue: "my_queue", exchange: "my_exchange", routing_key: "")
 ////
 ////   // Start consumer supervisor and subscribe
@@ -1541,6 +1541,89 @@ fn start_consumer_actor(
   |> actor.start
 }
 
+/// Decoder for basic.deliver AMQP message metadata
+fn basic_deliver_decoder() -> decode.Decoder(Deliver) {
+  use consumer_tag <- decode.subfield([0, 1], decode.string)
+  use delivery_tag <- decode.subfield([0, 2], decode.int)
+  use redelivered <- decode.subfield([0, 3], decode.bool)
+  use exchange <- decode.subfield([0, 4], decode.string)
+  use routing_key <- decode.subfield([0, 5], decode.string)
+  decode.success(Deliver(
+    consumer_tag,
+    delivery_tag,
+    redelivered,
+    exchange,
+    routing_key,
+  ))
+}
+
+/// Decoder for AMQP message properties (content type, encoding, etc.)
+fn payload_properties_decoder() -> decode.Decoder(List(PublishOption)) {
+  let properties = []
+  use content_type <- decode.subfield([1], decode.optional(decode.string))
+  let properties = add_if_some(properties, ContentType, content_type)
+
+  use content_encoding <- decode.subfield([2], decode.optional(decode.string))
+  let properties = add_if_some(properties, ContentEncoding, content_encoding)
+
+  use delivery_mode <- decode.subfield([4], decode.optional(decode.int))
+  let properties =
+    add_if_some(properties, Persistent, case delivery_mode {
+      Some(2) -> Some(True)
+      Some(1) -> Some(False)
+      _ -> None
+    })
+
+  use priority <- decode.subfield([5], decode.optional(decode.int))
+  let properties = add_if_some(properties, Priority, priority)
+
+  use correlation_id <- decode.subfield([6], decode.optional(decode.string))
+  let properties = add_if_some(properties, CorrelationId, correlation_id)
+
+  use reply_to <- decode.subfield([7], decode.optional(decode.string))
+  let properties = add_if_some(properties, ReplyTo, reply_to)
+
+  use expiration_str <- decode.subfield([8], decode.optional(decode.string))
+  let expiration_duration = case expiration_str {
+    Some(s) ->
+      case int.parse(s) {
+        Ok(ms) -> Some(duration.milliseconds(ms))
+        Error(_) -> None
+      }
+    None -> None
+  }
+  let properties = add_if_some(properties, Expiration, expiration_duration)
+
+  use message_id <- decode.subfield([9], decode.optional(decode.string))
+  let properties = add_if_some(properties, MessageId, message_id)
+
+  use timestamp_secs <- decode.subfield([10], decode.optional(decode.int))
+  let timestamp_value = case timestamp_secs {
+    Some(secs) -> Some(timestamp.from_unix_seconds(secs))
+    None -> None
+  }
+  let properties = add_if_some(properties, Timestamp, timestamp_value)
+
+  use message_type <- decode.subfield([11], decode.optional(decode.string))
+  let properties = add_if_some(properties, Type, message_type)
+
+  use user_id <- decode.subfield([12], decode.optional(decode.string))
+  let properties = add_if_some(properties, UserId, user_id)
+
+  use app_id <- decode.subfield([13], decode.optional(decode.string))
+  let properties = add_if_some(properties, AppId, app_id)
+
+  decode.success(properties)
+}
+
+/// Decoder for complete AMQP message payload (properties + body + headers)
+fn payload_decoder() -> decode.Decoder(Payload) {
+  use properties <- decode.subfield([1, 1], payload_properties_decoder())
+  use payload <- decode.subfield([1, 2], decode.bit_array)
+  use headers <- decode.subfield([1, 1, 3], amqp_headers_decoder())
+  decode.success(Payload(payload, properties, headers))
+}
+
 fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
   process.new_selector()
   |> process.select_record(atom.create("basic.cancel"), 2, fn(_) {
@@ -1550,93 +1633,9 @@ fn build_consumer_selector() -> process.Selector(ConsumerMessage) {
     AmqpCancelled
   })
   |> process.select_other(fn(delivery_dyn) {
-    let basic_deliver_decoder = {
-      use consumer_tag <- decode.subfield([0, 1], decode.string)
-      use delivery_tag <- decode.subfield([0, 2], decode.int)
-      use redelivered <- decode.subfield([0, 3], decode.bool)
-      use exchange <- decode.subfield([0, 4], decode.string)
-      use routing_key <- decode.subfield([0, 5], decode.string)
-      decode.success(Deliver(
-        consumer_tag,
-        delivery_tag,
-        redelivered,
-        exchange,
-        routing_key,
-      ))
-    }
-
-    let payload_properties_decoder = {
-      let properties = []
-      use content_type <- decode.subfield([1], decode.optional(decode.string))
-      let properties = add_if_some(properties, ContentType, content_type)
-
-      use content_encoding <- decode.subfield(
-        [2],
-        decode.optional(decode.string),
-      )
-      let properties =
-        add_if_some(properties, ContentEncoding, content_encoding)
-
-      use delivery_mode <- decode.subfield([4], decode.optional(decode.int))
-      let properties =
-        add_if_some(properties, Persistent, case delivery_mode {
-          Some(2) -> Some(True)
-          Some(1) -> Some(False)
-          _ -> None
-        })
-
-      use priority <- decode.subfield([5], decode.optional(decode.int))
-      let properties = add_if_some(properties, Priority, priority)
-
-      use correlation_id <- decode.subfield([6], decode.optional(decode.string))
-      let properties = add_if_some(properties, CorrelationId, correlation_id)
-
-      use reply_to <- decode.subfield([7], decode.optional(decode.string))
-      let properties = add_if_some(properties, ReplyTo, reply_to)
-
-      use expiration_str <- decode.subfield([8], decode.optional(decode.string))
-      let expiration_duration = case expiration_str {
-        Some(s) ->
-          case int.parse(s) {
-            Ok(ms) -> Some(duration.milliseconds(ms))
-            Error(_) -> None
-          }
-        None -> None
-      }
-      let properties = add_if_some(properties, Expiration, expiration_duration)
-
-      use message_id <- decode.subfield([9], decode.optional(decode.string))
-      let properties = add_if_some(properties, MessageId, message_id)
-
-      use timestamp_secs <- decode.subfield([10], decode.optional(decode.int))
-      let timestamp_value = case timestamp_secs {
-        Some(secs) -> Some(timestamp.from_unix_seconds(secs))
-        None -> None
-      }
-      let properties = add_if_some(properties, Timestamp, timestamp_value)
-
-      use message_type <- decode.subfield([11], decode.optional(decode.string))
-      let properties = add_if_some(properties, Type, message_type)
-
-      use user_id <- decode.subfield([12], decode.optional(decode.string))
-      let properties = add_if_some(properties, UserId, user_id)
-
-      use app_id <- decode.subfield([13], decode.optional(decode.string))
-      let properties = add_if_some(properties, AppId, app_id)
-
-      decode.success(properties)
-    }
-
-    let payload_decoder = {
-      use properties <- decode.subfield([1, 1], payload_properties_decoder)
-      use payload <- decode.subfield([1, 2], decode.bit_array)
-      use headers <- decode.subfield([1, 1, 3], amqp_headers_decoder())
-      decode.success(Payload(payload, properties, headers))
-    }
-
     let assert Ok(basic_deliver) =
-      decode.run(delivery_dyn, basic_deliver_decoder)
-    let assert Ok(payload) = decode.run(delivery_dyn, payload_decoder)
+      decode.run(delivery_dyn, basic_deliver_decoder())
+    let assert Ok(payload) = decode.run(delivery_dyn, payload_decoder())
 
     AmqpDelivery(payload, basic_deliver)
   })

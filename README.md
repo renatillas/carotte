@@ -51,7 +51,7 @@ pub fn main() {
 
   // Declare a durable queue
   let assert Ok(_) =
-    carotte.QueueConfig(..carotte.queue("my_queue"), durable: True)
+    carotte.QueueConfig(..carotte.default_queue("my_queue"), durable: True)
     |> carotte.declare_queue(ch)
 
   // Bind queue to exchange
@@ -157,7 +157,7 @@ Declare and configure queues using record update syntax:
 
 ```gleam
 carotte.QueueConfig(
-  ..carotte.queue("task_queue"),
+  ..carotte.default_queue("task_queue"),
   durable: True,       // Survive broker restart
   exclusive: True,     // Only one consumer allowed
   auto_delete: True,   // Delete when last consumer disconnects
