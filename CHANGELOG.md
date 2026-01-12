@@ -45,8 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added try/catch error handling to `consume` FFI function to match other FFI functions
 - Fixed `ListHeader` serialization in FFI layer - array elements were incorrectly destructured
 - Fixed typo in documentation: `consumer_start` -> `start_consumer`
-- **NEW**: Refactored `build_consumer_selector` function - extracted decoder logic into separate functions for better maintainability
-- **NEW**: Fixed FFI functions to properly validate AMQP response records (`set_qos`, `tx_select`, `tx_commit`, `tx_rollback`) instead of blindly returning success
 
 ## 4.0.1 - 2026-01-08
 
