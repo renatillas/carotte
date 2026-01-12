@@ -667,6 +667,70 @@ pub fn open_channel(client: Client) -> Result(Channel, ChannelError) {
 @external(erlang, "carotte_ffi", "open_channel")
 fn do_open_channel(carotte_client: Client) -> Result(Channel, ChannelError)
 
+/// Close a channel.
+/// This releases the channel resources on the server.
+/// Once closed, the channel cannot be used for further operations.
+pub fn close_channel(channel: Channel) -> Result(Nil, ChannelError) {
+  do_close_channel(channel)
+}
+
+@external(erlang, "carotte_ffi", "close_channel")
+fn do_close_channel(channel: Channel) -> Result(Nil, ChannelError)
+
+/// Set Quality of Service (QoS) for a channel.
+/// Controls the prefetch count for message delivery.
+///
+/// ## Parameters
+/// - `channel`: The channel to configure
+/// - `prefetch_count`: Maximum number of unacknowledged messages. Set to 0 for unlimited.
+/// - `global`: If True, applies to the entire connection. If False, applies only to this channel.
+///
+/// ## Example
+/// ```gleam
+/// // Limit to 10 unacknowledged messages per consumer
+/// let assert Ok(_) = carotte.set_qos(ch, prefetch_count: 10, global: False)
+/// ```
+///
+/// This is essential for load balancing across multiple consumers.
+pub fn set_qos(
+  channel: Channel,
+  prefetch_count: Int,
+  global: Bool,
+) -> Result(Nil, ChannelError) {
+  do_set_qos(channel, prefetch_count, global)
+}
+
+@external(erlang, "carotte_ffi", "set_qos")
+fn do_set_qos(
+  channel: Channel,
+  prefetch_count: Int,
+  global: Bool,
+) -> Result(Nil, ChannelError)
+
+/// Enable transaction mode on a channel.
+/// Once enabled, messages published on this channel will not be delivered
+/// until `commit_transaction` is called, or discarded if `rollback_transaction` is called.
+///
+/// ## Example
+/// ```gleam
+/// let assert Ok(_) = carotte.start_transaction(ch)
+/// let assert Ok(_) = carotte.publish(channel: ch, exchange: "ex", routing_key: "key", payload: <<"msg1">>, options: [])
+/// let assert Ok(_) = carotte.publish(channel: ch, exchange: "ex", routing_key: "key", payload: <<"msg2">>, options: [])
+/// let assert Ok(_) = carotte.commit_transaction(ch)  // Both messages delivered atomically
+/// ```
+@external(erlang, "carotte_ffi", "tx_select")
+pub fn start_transaction(channel: Channel) -> Result(Nil, ChannelError)
+
+/// Commit the current transaction on a channel.
+/// All messages published since `start_transaction` (or the last commit) are delivered.
+@external(erlang, "carotte_ffi", "tx_commit")
+pub fn commit_transaction(channel: Channel) -> Result(Nil, ChannelError)
+
+/// Rollback the current transaction on a channel.
+/// All messages published since `start_transaction` (or the last commit) are discarded.
+@external(erlang, "carotte_ffi", "tx_rollback")
+pub fn rollback_transaction(channel: Channel) -> Result(Nil, ChannelError)
+
 // =============================================================================
 // EXCHANGE FUNCTIONS
 // =============================================================================
@@ -1475,6 +1539,62 @@ fn do_basic_reject(
   delivery_tag: Int,
   requeue: Bool,
 ) -> Result(Nil, ConsumeError)
+
+/// Get a single message from a queue without subscribing.
+/// This is a synchronous, polling-based approach to consuming messages.
+///
+/// ## Parameters
+/// - `channel`: The channel to use
+/// - `queue`: The queue name to get a message from
+/// - `auto_ack`: If True, the message is automatically acknowledged. If False, you must call `ack()`.
+///
+/// ## Returns
+/// - `Ok(Some(#(payload, deliver)))` if a message was available
+/// - `Ok(None)` if the queue is empty
+/// - `Error(consume_error)` if there was an error
+///
+/// ## Example
+/// ```gleam
+/// case carotte.get_message(ch, queue: "my_queue", auto_ack: True) {
+///   Ok(Some(#(payload, deliver))) -> {
+///     let assert Ok(text) = bit_array.to_string(payload.payload)
+///     io.println("Got message: " <> text)
+///   }
+///   Ok(None) -> io.println("Queue is empty")
+///   Error(e) -> io.println("Error: " <> carotte.describe_consume_error(e))
+/// }
+/// ```
+///
+/// **Note:** For continuous message consumption, use `subscribe()` instead.
+/// This function is best for one-off message retrieval or polling scenarios.
+pub fn get_message(
+  channel: Channel,
+  queue queue: String,
+  auto_ack auto_ack: Bool,
+) -> Result(option.Option(#(Payload, Deliver)), ConsumeError) {
+  use opt_result <- result.try(do_basic_get(channel, queue, auto_ack))
+  case opt_result {
+    None -> Ok(None)
+    Some(delivery_dyn) -> {
+      // Decode the delivery message using the same decoders as consumer messages
+      case decode.run(delivery_dyn, basic_deliver_decoder()) {
+        Ok(deliver) ->
+          case decode.run(delivery_dyn, payload_decoder()) {
+            Ok(payload) -> Ok(Some(#(payload, deliver)))
+            Error(_) -> Error(ConsumeUnknownError("Failed to decode payload"))
+          }
+        Error(_) -> Error(ConsumeUnknownError("Failed to decode delivery"))
+      }
+    }
+  }
+}
+
+@external(erlang, "carotte_ffi", "basic_get")
+fn do_basic_get(
+  channel: Channel,
+  queue: String,
+  auto_ack: Bool,
+) -> Result(option.Option(dynamic.Dynamic), ConsumeError)
 
 // =============================================================================
 // CONSUMER ACTOR (INTERNAL)

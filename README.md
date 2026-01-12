@@ -446,6 +446,80 @@ let assert Ok(_) = carotte.delete_queue(
 )
 ```
 
+### Quality of Service (QoS)
+
+Control message prefetch for load balancing across consumers:
+
+```gleam
+// Limit to 10 unacknowledged messages per consumer
+let assert Ok(_) = carotte.set_qos(ch, 10, False)
+
+// This ensures messages are evenly distributed across multiple consumers
+// Without QoS, one fast consumer might get all messages
+```
+
+QoS is essential for production deployments with multiple consumers. It prevents any single consumer from being overwhelmed while others sit idle.
+
+### Pulling Messages (Alternative to Subscribing)
+
+For polling scenarios or one-off message retrieval, use `get_message`:
+
+```gleam
+case carotte.get_message(ch, queue: "my_queue", auto_ack: True) {
+  Ok(Some(#(payload, deliver))) -> {
+    let assert Ok(text) = bit_array.to_string(payload.payload)
+    io.println("Got: " <> text)
+  }
+  Ok(None) -> io.println("Queue is empty")
+  Error(e) -> io.println("Error: " <> carotte.describe_consume_error(e))
+}
+```
+
+**Note:** For continuous consumption, `subscribe()` is more efficient. Use `get_message()` for:
+- Polling queues at intervals
+- One-off message retrieval
+- Testing and debugging
+
+### Transactions
+
+Ensure atomic publishing of message batches:
+
+```gleam
+// Enable transaction mode on channel
+let assert Ok(_) = carotte.tx_select(ch)
+
+// Publish multiple messages
+let assert Ok(_) = carotte.publish(channel: ch, exchange: "orders", routing_key: "new", payload: <<"order 1">>, options: [])
+let assert Ok(_) = carotte.publish(channel: ch, exchange: "orders", routing_key: "new", payload: <<"order 2">>, options: [])
+let assert Ok(_) = carotte.publish(channel: ch, exchange: "orders", routing_key: "new", payload: <<"order 3">>, options: [])
+
+// Commit - all messages delivered atomically
+let assert Ok(_) = carotte.tx_commit(ch)
+
+// Or rollback to discard all messages
+// let assert Ok(_) = carotte.tx_rollback(ch)
+```
+
+Transactions ensure all-or-nothing delivery. Either all messages are delivered, or none are.
+
+### Channel Management
+
+Close channels when done to free resources:
+
+```gleam
+// Open a channel
+let assert Ok(ch) = carotte.open_channel(client)
+
+// Use the channel...
+
+// Close it when done
+let assert Ok(_) = carotte.close_channel(ch)
+
+// Connection remains open for other channels
+```
+
+RabbitMQ best practice: Use one connection with multiple channels rather than multiple connections.
+
 ### Exchange Bindings
 
 Create complex routing topologies:

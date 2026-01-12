@@ -1,9 +1,9 @@
 -module(carotte_ffi).
 
--export([start/9, close/1, open_channel/1, publish/5, consume/4, ack/3, nack/4, reject/3, unsubscribe/3,
+-export([start/9, close/1, open_channel/1, close_channel/1, publish/5, consume/4, ack/3, nack/4, reject/3, unsubscribe/3,
          exchange_declare/2, exchange_delete/4, exchange_bind/5, exchange_unbind/5,
          queue_declare/7, queue_delete/5, queue_bind/5, queue_unbind/4, queue_purge/3,
-         is_process_alive/1]).
+         is_process_alive/1, set_qos/3, tx_select/1, tx_commit/1, tx_rollback/1, basic_get/3]).
 
 %% =============================================================================
 %% CONNECTION ERROR CONVERTER
@@ -294,6 +294,15 @@ open_channel({client, Pid, _Config}) ->
     {ok, ChannelPid} ->
       {ok, {channel, ChannelPid}};
     {error, Error} ->
+      convert_channel_error(Error)
+  end.
+
+close_channel({channel, ChannelPid}) ->
+  try
+    amqp_channel:close(ChannelPid),
+    {ok, nil}
+  catch
+    _:Error ->
       convert_channel_error(Error)
   end.
 
@@ -736,12 +745,136 @@ unsubscribe({channel, ChannelPid}, ConsumerTag, Nowait) ->
       convert_consume_error(Reason)
   end.
 
+%% QoS support
+-record('basic.qos', {prefetch_size = 0, prefetch_count = 0, global = false}).
+
+set_qos({channel, ChannelPid}, PrefetchCount, Global) ->
+  try
+    Result = amqp_channel:call(ChannelPid,
+                                #'basic.qos'{prefetch_count = PrefetchCount,
+                                             global = Global}),
+    case Result of
+      QosOk when element(1, QosOk) == 'basic.qos_ok' ->
+        {ok, nil};
+      Error ->
+        convert_channel_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_channel_error(Reason);
+    error:Reason ->
+      convert_channel_error(Reason)
+  end.
+
+%% Transaction support
+-record('tx.select', {}).
+-record('tx.commit', {}).
+-record('tx.rollback', {}).
+
+tx_select({channel, ChannelPid}) ->
+  try
+    Result = amqp_channel:call(ChannelPid, #'tx.select'{}),
+    case Result of
+      SelectOk when element(1, SelectOk) == 'tx.select_ok' ->
+        {ok, nil};
+      Error ->
+        convert_channel_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_channel_error(Reason);
+    error:Reason ->
+      convert_channel_error(Reason)
+  end.
+
+tx_commit({channel, ChannelPid}) ->
+  try
+    Result = amqp_channel:call(ChannelPid, #'tx.commit'{}),
+    case Result of
+      CommitOk when element(1, CommitOk) == 'tx.commit_ok' ->
+        {ok, nil};
+      Error ->
+        convert_channel_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_channel_error(Reason);
+    error:Reason ->
+      convert_channel_error(Reason)
+  end.
+
+tx_rollback({channel, ChannelPid}) ->
+  try
+    Result = amqp_channel:call(ChannelPid, #'tx.rollback'{}),
+    case Result of
+      RollbackOk when element(1, RollbackOk) == 'tx.rollback_ok' ->
+        {ok, nil};
+      Error ->
+        convert_channel_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_channel_error(Reason);
+    error:Reason ->
+      convert_channel_error(Reason)
+  end.
+
+%% Basic.Get - pull a single message from a queue
+-record('basic.get', {ticket = 0, queue = <<"">>, no_ack = false}).
+
+basic_get({channel, ChannelPid}, Queue, NoAck) ->
+  try
+    Result = amqp_channel:call(ChannelPid,
+                                #'basic.get'{queue = Queue, no_ack = NoAck}),
+    case Result of
+      {GetOk, Msg} when element(1, GetOk) == 'basic.get_ok' ->
+        % Extract fields from the get_ok record
+        % The record is a tuple: {'basic.get_ok', DeliveryTag, Redelivered, Exchange, RoutingKey, MessageCount}
+        {_, DeliveryTag, Redelivered, Exchange, RoutingKey, _MessageCount} = GetOk,
+        % Build deliver info - same structure as basic.deliver that consumers receive
+        Deliver = {'basic.deliver',
+                   <<"">>,  % consumer_tag is empty for basic.get
+                   DeliveryTag,
+                   Redelivered,
+                   Exchange,
+                   RoutingKey},
+        % Return the same structure that consumers receive: {BasicDeliver, AmqpMsg}
+        % This will be decoded by the same decoders on the Gleam side
+        DeliveryMessage = {Deliver, Msg},
+        {ok, {some, DeliveryMessage}};
+      {'basic.get_empty'} ->
+        {ok, none};
+      {'basic.get_empty', _ClusterID} ->
+        {ok, none};
+      Error ->
+        convert_consume_error(Error)
+    end
+  catch
+    exit:Reason ->
+      convert_consume_error(Reason);
+    error:Reason ->
+      convert_consume_error(Reason)
+  end.
+
 close({client, Pid, _Config}) ->
-  case amqp_connection:close(Pid) of
-    ok ->
+  try
+    case amqp_connection:close(Pid) of
+      ok ->
+        {ok, nil};
+      {error, Error} ->
+        convert_connection_error(Error)
+    end
+  catch
+    exit:noproc ->
+      % Connection already closed - this is fine
       {ok, nil};
-    {error, Error} ->
-      convert_connection_error(Error)
+    exit:{noproc, _} ->
+      % Connection already closed - this is fine
+      {ok, nil};
+    exit:Reason ->
+      convert_connection_error(Reason);
+    error:Reason ->
+      convert_connection_error(Reason)
   end.
 
 % Check if the connection process is alive

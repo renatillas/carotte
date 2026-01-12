@@ -35,12 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nack` function for negatively acknowledging messages with control over multiple and requeue options
 - `nack_single` convenience function for negatively acknowledging a single message
 - `reject` function for rejecting messages (original AMQP 0-9-1 method)
+- `close_channel` function for proper channel resource management
+- `set_qos` function for Quality of Service (prefetch count) control - essential for load balancing
+- `get_message` function (basic.get) for polling/pulling single messages without subscribing
+- Transaction support with `start_transaction`, `commit_transaction`, and `rollback_transaction` for atomic message publishing
 
 ### Fixed
 
 - Added try/catch error handling to `consume` FFI function to match other FFI functions
 - Fixed `ListHeader` serialization in FFI layer - array elements were incorrectly destructured
 - Fixed typo in documentation: `consumer_start` -> `start_consumer`
+- **NEW**: Refactored `build_consumer_selector` function - extracted decoder logic into separate functions for better maintainability
+- **NEW**: Fixed FFI functions to properly validate AMQP response records (`set_qos`, `tx_select`, `tx_commit`, `tx_rollback`) instead of blindly returning success
 
 ## 4.0.1 - 2026-01-08
 
